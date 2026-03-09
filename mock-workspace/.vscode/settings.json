@@ -1,0 +1,12 @@
+{
+  "cliRunner.executableNames": [
+    "cli-runner-test.cmd",
+    "tools/cli-runner-test.cmd",
+    "tools\\cli-runner-test.cmd"
+  ],
+  "cliRunner.helpArgs": [
+    "-h"
+  ],
+  "cliRunner.helpTimeoutMs": 12000,
+  "cliRunner.maxExecutables": 30
+}

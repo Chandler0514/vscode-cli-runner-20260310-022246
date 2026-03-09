@@ -1,0 +1,203 @@
+{
+  "name": "cli-runner-sidebar",
+  "displayName": "CLI Runner Sidebar",
+  "description": "Find configured executables in the workspace, parse commands from -h, and run them from a sidebar.",
+  "version": "0.0.1",
+  "publisher": "chandler-local",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onView:cliRunner.modules.commands",
+    "onView:cliRunner.modules.rest",
+    "onView:cliRunner.modules.tools",
+    "onCommand:cliRunner.openView",
+    "onCommand:cliRunner.refresh",
+    "onCommand:cliRunner.pickExecutable",
+    "onCommand:cliRunner.runCommand",
+    "onCommand:cliRunner.runToolAction",
+    "onCommand:cliRunner.runRestAction"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "cliRunnerWorkbench",
+          "title": "CLI Runner",
+          "icon": "resources/terminal.svg"
+        }
+      ]
+    },
+    "views": {
+      "cliRunnerWorkbench": [
+        {
+          "id": "cliRunner.modules.commands",
+          "name": "CLI Commands"
+        },
+        {
+          "id": "cliRunner.modules.rest",
+          "name": "REST Services"
+        },
+        {
+          "id": "cliRunner.modules.tools",
+          "name": "Tool Wrappers"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "cliRunner.openView",
+        "title": "CLI Runner: Open View"
+      },
+      {
+        "command": "cliRunner.refresh",
+        "title": "CLI Runner: Refresh"
+      },
+      {
+        "command": "cliRunner.pickExecutable",
+        "title": "CLI Runner: Add Executable Name"
+      },
+      {
+        "command": "cliRunner.runCommand",
+        "title": "CLI Runner: Run Command"
+      },
+      {
+        "command": "cliRunner.runToolAction",
+        "title": "CLI Runner: Run Tool Wrapper Action"
+      },
+      {
+        "command": "cliRunner.runRestAction",
+        "title": "CLI Runner: Run REST Resource Action"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "cliRunner.refresh",
+          "when": "view == cliRunner.modules.commands || view == cliRunner.modules.tools || view == cliRunner.modules.rest",
+          "group": "navigation@1"
+        },
+        {
+          "command": "cliRunner.pickExecutable",
+          "when": "view == cliRunner.modules.commands",
+          "group": "navigation@2"
+        },
+        {
+          "command": "cliRunner.runToolAction",
+          "when": "view == cliRunner.modules.tools",
+          "group": "navigation@2"
+        },
+        {
+          "command": "cliRunner.runRestAction",
+          "when": "view == cliRunner.modules.rest",
+          "group": "navigation@2"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "CLI Runner",
+      "properties": {
+        "cliRunner.executableNames": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Executable names or workspace-relative paths to scan, such as mytool, mytool.exe, tools/mytool."
+        },
+        "cliRunner.helpArgs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "-h"
+          ],
+          "description": "Arguments used to request help text from each executable."
+        },
+        "cliRunner.searchExcludeGlob": {
+          "type": "string",
+          "default": "**/{.git,node_modules,dist,build,.dart_tool,.idea}/**",
+          "description": "Glob for folders/files excluded while searching executables."
+        },
+        "cliRunner.maxExecutables": {
+          "type": "number",
+          "default": 30,
+          "minimum": 1,
+          "maximum": 200,
+          "description": "Maximum number of executable files discovered."
+        },
+        "cliRunner.helpTimeoutMs": {
+          "type": "number",
+          "default": 12000,
+          "minimum": 1000,
+          "maximum": 120000,
+          "description": "Timeout in milliseconds for calling executable help output."
+        },
+        "cliRunner.toolExecutables": {
+          "type": "object",
+          "default": {
+            "svn": "svn",
+            "si": "si",
+            "cleartool": "cleartool",
+            "im": "im",
+            "cqcmd": "cqcmd"
+          },
+          "description": "Tool wrapper executable map. Keys: svn, si, cleartool, im, cqcmd.",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "cliRunner.restBaseUrl": {
+          "type": "string",
+          "default": "",
+          "description": "Base URL for REST Services module, for example https://api.example.com."
+        },
+        "cliRunner.restToken": {
+          "type": "string",
+          "default": "",
+          "description": "Bearer token for REST Services module (optional)."
+        },
+        "cliRunner.almRestBaseUrl": {
+          "type": "string",
+          "default": "",
+          "description": "Base URL for ALM REST tool in Tool Wrappers."
+        },
+        "cliRunner.almRestToken": {
+          "type": "string",
+          "default": "",
+          "description": "Bearer token for ALM REST tool (optional)."
+        },
+        "cliRunner.restTimeoutMs": {
+          "type": "number",
+          "default": 15000,
+          "minimum": 1000,
+          "maximum": 120000,
+          "description": "Timeout in milliseconds for REST calls."
+        },
+        "cliRunner.restExtraHeaders": {
+          "type": "object",
+          "default": {},
+          "description": "Extra headers for REST requests.",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.8",
+    "@types/vscode": "^1.90.0",
+    "typescript": "^5.5.2"
+  }
+}

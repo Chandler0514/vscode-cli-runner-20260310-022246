@@ -193,7 +193,8 @@
   "scripts": {
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
-    "watch": "tsc -watch -p ./"
+    "watch": "tsc -watch -p ./",
+    "package:vsix": "npx @vscode/vsce package --no-dependencies"
   },
   "devDependencies": {
     "@types/node": "^20.14.8",

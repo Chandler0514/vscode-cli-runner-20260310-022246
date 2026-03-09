@@ -1,0 +1,88 @@
+name: Distribution
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      publish_marketplace:
+        description: "Publish to VS Code Marketplace (needs VSCE_PAT)"
+        required: false
+        default: false
+        type: boolean
+      publish_openvsx:
+        description: "Publish to OpenVSX (needs OVSX_PAT)"
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+jobs:
+  package-release-publish:
+    runs-on: ubuntu-latest
+    env:
+      SHOULD_PUBLISH_MARKETPLACE: ${{ startsWith(github.ref, 'refs/tags/') || github.event.inputs.publish_marketplace == 'true' }}
+      SHOULD_PUBLISH_OPENVSX: ${{ startsWith(github.ref, 'refs/tags/') || github.event.inputs.publish_openvsx == 'true' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Compile
+        run: npm run compile
+
+      - name: Verify tag matches package version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          PACKAGE_VERSION="$(node -p "require('./package.json').version")"
+          echo "tag=$TAG_VERSION package=$PACKAGE_VERSION"
+          if [ "$TAG_VERSION" != "$PACKAGE_VERSION" ]; then
+            echo "Tag version and package.json version do not match."
+            exit 1
+          fi
+
+      - name: Package VSIX
+        run: |
+          npx @vscode/vsce package --no-dependencies
+          VSIX_FILE="$(ls -1 *.vsix | head -n 1)"
+          echo "VSIX_FILE=$VSIX_FILE" >> "$GITHUB_ENV"
+          echo "Packaged: $VSIX_FILE"
+
+      - name: Upload VSIX artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: vsix-package
+          path: ${{ env.VSIX_FILE }}
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.VSIX_FILE }}
+          generate_release_notes: true
+
+      - name: Publish to VS Code Marketplace
+        if: env.SHOULD_PUBLISH_MARKETPLACE == 'true' && secrets.VSCE_PAT != ''
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: |
+          npx @vscode/vsce publish --packagePath "$VSIX_FILE" -p "$VSCE_PAT"
+
+      - name: Publish to OpenVSX
+        if: env.SHOULD_PUBLISH_OPENVSX == 'true' && secrets.OVSX_PAT != ''
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+        run: |
+          npx ovsx publish "$VSIX_FILE" -p "$OVSX_PAT"

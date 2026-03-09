@@ -3,4 +3,3 @@
 src/**
 **/*.ts
 .gitignore
-README.md

@@ -5,27 +5,13 @@ on:
     tags:
       - "v*"
   workflow_dispatch:
-    inputs:
-      publish_marketplace:
-        description: "Publish to VS Code Marketplace (needs VSCE_PAT)"
-        required: false
-        default: false
-        type: boolean
-      publish_openvsx:
-        description: "Publish to OpenVSX (needs OVSX_PAT)"
-        required: false
-        default: false
-        type: boolean
 
 permissions:
   contents: write
 
 jobs:
-  package-release-publish:
+  release:
     runs-on: ubuntu-latest
-    env:
-      SHOULD_PUBLISH_MARKETPLACE: ${{ startsWith(github.ref, 'refs/tags/') || github.event.inputs.publish_marketplace == 'true' }}
-      SHOULD_PUBLISH_OPENVSX: ${{ startsWith(github.ref, 'refs/tags/') || github.event.inputs.publish_openvsx == 'true' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -74,15 +60,9 @@ jobs:
           generate_release_notes: true
 
       - name: Publish to VS Code Marketplace
-        if: env.SHOULD_PUBLISH_MARKETPLACE == 'true' && secrets.VSCE_PAT != ''
-        env:
-          VSCE_PAT: ${{ secrets.VSCE_PAT }}
-        run: |
-          npx @vscode/vsce publish --packagePath "$VSIX_FILE" -p "$VSCE_PAT"
+        if: secrets.VSCE_PAT != ''
+        run: npx @vscode/vsce publish --packagePath "${{ env.VSIX_FILE }}" -p "${{ secrets.VSCE_PAT }}"
 
       - name: Publish to OpenVSX
-        if: env.SHOULD_PUBLISH_OPENVSX == 'true' && secrets.OVSX_PAT != ''
-        env:
-          OVSX_PAT: ${{ secrets.OVSX_PAT }}
-        run: |
-          npx ovsx publish "$VSIX_FILE" -p "$OVSX_PAT"
+        if: secrets.OVSX_PAT != ''
+        run: npx ovsx publish "${{ env.VSIX_FILE }}" -p "${{ secrets.OVSX_PAT }}"

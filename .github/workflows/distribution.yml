@@ -60,9 +60,21 @@ jobs:
           generate_release_notes: true
 
       - name: Publish to VS Code Marketplace
-        if: secrets.VSCE_PAT != ''
-        run: npx @vscode/vsce publish --packagePath "${{ env.VSIX_FILE }}" -p "${{ secrets.VSCE_PAT }}"
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: |
+          if [ -z "${VSCE_PAT}" ]; then
+            echo "VSCE_PAT is not set. Skip VS Marketplace publish."
+            exit 0
+          fi
+          npx @vscode/vsce publish --packagePath "${{ env.VSIX_FILE }}" -p "${VSCE_PAT}"
 
       - name: Publish to OpenVSX
-        if: secrets.OVSX_PAT != ''
-        run: npx ovsx publish "${{ env.VSIX_FILE }}" -p "${{ secrets.OVSX_PAT }}"
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+        run: |
+          if [ -z "${OVSX_PAT}" ]; then
+            echo "OVSX_PAT is not set. Skip OpenVSX publish."
+            exit 0
+          fi
+          npx ovsx publish "${{ env.VSIX_FILE }}" -p "${OVSX_PAT}"

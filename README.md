@@ -59,7 +59,9 @@ On first activation, CLI Runner opens a guided quickstart page automatically.
 The guide helps teams:
 
 - complete required setup (workspace, executable discovery, scenario)
-- run one end-to-end experience across the 3 modules
+- run a guided click-tour across the 3 modules
+- jump to plugin configuration actions directly from each checklist item
+- open audit logs after workflow execution
 - align on plugin design mindset (context-first, observable, deterministic workflow)
 
 You can re-open anytime with `CLI Runner: Open Quickstart`.
@@ -155,6 +157,7 @@ Recommended analysis interfaces in `Tool Wrappers -> Embedded`:
 - `CLI Runner: Run Automotive Pipeline`
 - `CLI Runner: Run Variant Matrix`
 - `CLI Runner: Open Quickstart`
+- `CLI Runner: Open Audit Log`
 
 ## Development
 

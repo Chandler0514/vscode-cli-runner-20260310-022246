@@ -1,18 +1,34 @@
 import * as vscode from 'vscode';
 import { readCliConfig, readIntegrationConfig } from './config';
 
-const QUICKSTART_SHOWN_KEY = 'cliRunner.quickstart.shown.v1';
+const QUICKSTART_SHOWN_KEY = 'cliRunner.quickstart.shown.v2';
+
+interface QuickstartAction {
+  readonly label: string;
+  readonly command: string;
+  readonly args?: unknown[];
+  readonly primary?: boolean;
+}
 
 interface QuickstartCheck {
   readonly label: string;
   readonly ok: boolean;
   readonly required: boolean;
   readonly hint: string;
+  readonly action: QuickstartAction;
+}
+
+interface QuickstartTourStep {
+  readonly title: string;
+  readonly intent: string;
+  readonly actions: QuickstartAction[];
 }
 
 interface QuickstartModel {
   readonly workspaceName: string;
   readonly checks: QuickstartCheck[];
+  readonly tour: QuickstartTourStep[];
+  readonly recommendedAction?: QuickstartAction;
 }
 
 export class QuickstartGuide {
@@ -64,104 +80,170 @@ function buildModel(): QuickstartModel {
   const workspace = vscode.workspace.workspaceFolders?.[0];
   const cli = readCliConfig();
   const integration = readIntegrationConfig();
+  const hasWorkspace = Boolean(workspace);
+  const hasCliExecutable = cli.executableNames.length > 0;
   const scenarioCount = Object.keys(integration.automotive.scenarios).length;
-  const variantCount = Object.keys(integration.automotive.variantMatrix).length;
+  const hasScenario = scenarioCount > 0;
+  const hasActiveScenario = integration.automotive.activeScenario.trim().length > 0;
+  const hasVariantMatrix = Object.keys(integration.automotive.variantMatrix).length > 0;
+  const hasRestEndpoint = integration.restBaseUrl.length > 0 || integration.almRestBaseUrl.length > 0;
+
+  const checks: QuickstartCheck[] = [
+    {
+      label: 'Workspace opened',
+      ok: hasWorkspace,
+      required: true,
+      hint: 'Open a project folder to activate workspace-based context.',
+      action: {
+        label: 'Open Folder',
+        command: 'workbench.action.files.openFolder',
+        primary: true
+      }
+    },
+    {
+      label: 'CLI executable configured',
+      ok: hasCliExecutable,
+      required: true,
+      hint: 'Seed CLI discovery with at least one executable name/path.',
+      action: {
+        label: 'Add Executable',
+        command: 'cliRunner.pickExecutable',
+        primary: true
+      }
+    },
+    {
+      label: 'Automotive scenarios configured',
+      ok: hasScenario,
+      required: true,
+      hint: 'Set cliRunner.scenarios so templates can resolve project and ECU variables.',
+      action: {
+        label: 'Open Settings (cliRunner.scenarios)',
+        command: 'workbench.action.openSettings',
+        args: ['cliRunner.scenarios'],
+        primary: true
+      }
+    },
+    {
+      label: 'Active scenario selected',
+      ok: hasActiveScenario,
+      required: true,
+      hint: 'Pick one scenario before pipeline and matrix actions.',
+      action: {
+        label: 'Set Active Scenario',
+        command: 'cliRunner.setActiveScenario',
+        primary: true
+      }
+    },
+    {
+      label: 'Variant matrix configured',
+      ok: hasVariantMatrix,
+      required: false,
+      hint: 'Optional but recommended for cross-variant regression.',
+      action: {
+        label: 'Open Settings (cliRunner.variantMatrix)',
+        command: 'workbench.action.openSettings',
+        args: ['cliRunner.variantMatrix']
+      }
+    },
+    {
+      label: 'REST endpoint configured',
+      ok: hasRestEndpoint,
+      required: false,
+      hint: 'Configure restBaseUrl/almRestBaseUrl for REST Services.',
+      action: {
+        label: 'Open Settings (cliRunner.restBaseUrl)',
+        command: 'workbench.action.openSettings',
+        args: ['cliRunner.restBaseUrl']
+      }
+    }
+  ];
+
+  const recommendedAction = checks.find((item) => item.required && !item.ok)?.action;
+
+  const tour: QuickstartTourStep[] = [
+    {
+      title: 'Step 1 - Configure Plugin',
+      intent: 'Finish required setup before exploration.',
+      actions: [
+        { label: 'Open Workspace Settings JSON', command: 'workbench.action.openWorkspaceSettingsFile', primary: true },
+        { label: 'Search Settings: cliRunner', command: 'workbench.action.openSettings', args: ['cliRunner'] },
+        { label: 'Add Executable', command: 'cliRunner.pickExecutable' },
+        { label: 'Set Active Scenario', command: 'cliRunner.setActiveScenario' },
+        { label: 'Refresh Checkboard', command: 'cliRunner.openQuickstart' }
+      ]
+    },
+    {
+      title: 'Step 2 - Explore The Three Views',
+      intent: 'Browse each module and understand responsibility boundaries.',
+      actions: [
+        { label: 'Open CLI Runner Sidebar', command: 'cliRunner.openView', primary: true },
+        { label: 'Focus CLI Commands', command: 'cliRunner.modules.commands.focus' },
+        { label: 'Focus Tool Wrappers', command: 'cliRunner.modules.tools.focus' },
+        { label: 'Focus REST Services', command: 'cliRunner.modules.rest.focus' }
+      ]
+    },
+    {
+      title: 'Step 3 - Run Core Actions',
+      intent: 'Execute one action per module and inspect output + result views.',
+      actions: [
+        { label: 'Run CLI Command', command: 'cliRunner.runCommand', primary: true },
+        { label: 'Run Tool Action', command: 'cliRunner.runToolAction' },
+        { label: 'Run REST Action', command: 'cliRunner.runRestAction' },
+        { label: 'Toggle Output Panel', command: 'workbench.action.output.toggleOutput' }
+      ]
+    },
+    {
+      title: 'Step 4 - Run Team Workflow',
+      intent: 'Move from ad-hoc commands to repeatable engineering routines.',
+      actions: [
+        { label: 'Run Automotive Pipeline', command: 'cliRunner.runAutomotivePipeline', primary: true },
+        { label: 'Run Variant Matrix', command: 'cliRunner.runVariantMatrix' },
+        { label: 'Open Audit Log', command: 'cliRunner.openAuditLog' },
+        { label: 'Open Quickstart Again', command: 'cliRunner.openQuickstart' }
+      ]
+    }
+  ];
 
   return {
     workspaceName: workspace?.name ?? '(no workspace)',
-    checks: [
-      {
-        label: 'Workspace opened',
-        ok: Boolean(workspace),
-        required: true,
-        hint: 'Open a project folder first.'
-      },
-      {
-        label: 'CLI executable configured',
-        ok: cli.executableNames.length > 0,
-        required: true,
-        hint: 'Use "Add Executable Name" to seed CLI Commands discovery.'
-      },
-      {
-        label: 'Automotive scenarios configured',
-        ok: scenarioCount > 0,
-        required: true,
-        hint: 'Set cliRunner.scenarios in workspace settings.'
-      },
-      {
-        label: 'Active scenario selected',
-        ok: integration.automotive.activeScenario.trim().length > 0,
-        required: true,
-        hint: 'Run "Set Active Scenario" to select one.'
-      },
-      {
-        label: 'Variant matrix configured',
-        ok: variantCount > 0,
-        required: false,
-        hint: 'Optional but recommended for matrix regression.'
-      },
-      {
-        label: 'REST endpoint configured',
-        ok: integration.restBaseUrl.length > 0 || integration.almRestBaseUrl.length > 0,
-        required: false,
-        hint: 'Set restBaseUrl/almRestBaseUrl if you use REST Services.'
-      }
-    ]
+    checks,
+    tour,
+    recommendedAction
   };
 }
 
 function buildHtml(model: QuickstartModel, firstRun: boolean): string {
   const requiredDone = model.checks.filter((item) => item.required && item.ok).length;
   const requiredTotal = model.checks.filter((item) => item.required).length;
-  const heading = firstRun
-    ? 'Welcome to CLI Runner'
-    : 'CLI Runner Quickstart';
+  const heading = firstRun ? 'Welcome to CLI Runner' : 'CLI Runner Quickstart';
   const intro = firstRun
-    ? 'First-time setup: finish required checks, then run the guided flow below.'
-    : 'Use this guide anytime to refresh setup, workflow, and design mindset.';
+    ? 'Start with setup, then follow the guided tour to build an operating mindset.'
+    : 'Use this guide to navigate features, configure plugin settings, and train new teammates.';
 
-  const checks = model.checks.map((item) => `
-      <li class="check-item ${item.ok ? 'ok' : 'todo'}">
+  const checkRows = model.checks.map((item) => `
+    <li class="check-row ${item.ok ? 'ok' : 'todo'}">
+      <div>
+        <div class="label">${escapeHtml(item.label)}</div>
+        <div class="meta">${item.required ? 'Required' : 'Optional'} · ${escapeHtml(item.hint)}</div>
+      </div>
+      <div class="right">
         <span class="state">${item.ok ? 'OK' : 'TODO'}</span>
-        <span class="label">${escapeHtml(item.label)}</span>
-        <span class="meta">${item.required ? 'Required' : 'Optional'} · ${escapeHtml(item.hint)}</span>
-      </li>
-    `).join('');
-
-  const sections = `
-  <div class="grid">
-    <section class="card">
-      <h2>Step 1 · Configure</h2>
-      <p>Complete the required checks and establish project context.</p>
-      <div class="actions">
-        <a class="btn" href="${commandUri('workbench.action.openWorkspaceSettingsFile')}">Open Workspace Settings</a>
-        <a class="btn" href="${commandUri('cliRunner.pickExecutable')}">Add Executable</a>
-        <a class="btn" href="${commandUri('cliRunner.setActiveScenario')}">Set Scenario</a>
-        <a class="btn ghost" href="${commandUri('cliRunner.openQuickstart')}">Refresh Checks</a>
+        ${actionButton(item.action)}
       </div>
-    </section>
+    </li>
+  `).join('');
 
-    <section class="card">
-      <h2>Step 2 · Experience</h2>
-      <p>Run one action in each module to feel the execution loop.</p>
-      <div class="actions">
-        <a class="btn" href="${commandUri('cliRunner.openView')}">Open Sidebar</a>
-        <a class="btn" href="${commandUri('cliRunner.runCommand')}">Try CLI Commands</a>
-        <a class="btn" href="${commandUri('cliRunner.runToolAction')}">Try Tool Wrappers</a>
-        <a class="btn" href="${commandUri('cliRunner.runRestAction')}">Try REST Services</a>
-      </div>
+  const tourCards = model.tour.map((step) => `
+    <section class="tour-card">
+      <h3>${escapeHtml(step.title)}</h3>
+      <p>${escapeHtml(step.intent)}</p>
+      <div class="actions">${step.actions.map((action) => actionButton(action)).join('')}</div>
     </section>
+  `).join('');
 
-    <section class="card">
-      <h2>Step 3 · Operate Like A Team</h2>
-      <p>Run standardized workflows to build engineering rhythm.</p>
-      <div class="actions">
-        <a class="btn" href="${commandUri('cliRunner.runAutomotivePipeline')}">Run Pipeline</a>
-        <a class="btn" href="${commandUri('cliRunner.runVariantMatrix')}">Run Variant Matrix</a>
-        <a class="btn" href="${commandUri('cliRunner.runToolAction')}">Analyze Map / Quality</a>
-      </div>
-    </section>
-  </div>`;
+  const nextAction = model.recommendedAction
+    ? `<div class="next-action">Suggested next move: ${actionButton({ ...model.recommendedAction, primary: true })}</div>`
+    : `<div class="next-action success">All required checks passed. Start the guided tour below.</div>`;
 
   return `<!doctype html>
 <html lang="en">
@@ -179,57 +261,86 @@ function buildHtml(model: QuickstartModel, firstRun: boolean): string {
     color: var(--vscode-foreground);
     line-height: 1.5;
   }
+  h1, h2, h3 { margin: 0; }
+  p { margin: 6px 0 0 0; }
   .hero {
     border: 1px solid var(--vscode-panel-border);
-    border-radius: 10px;
+    border-radius: 12px;
     padding: 16px;
-    margin-bottom: 12px;
-    background: color-mix(in srgb, var(--vscode-editor-background) 90%, var(--vscode-editorWidget-border) 10%);
+    background: linear-gradient(140deg, color-mix(in srgb, var(--vscode-editor-background) 86%, var(--vscode-focusBorder) 14%), var(--vscode-editor-background));
   }
-  h1 { margin: 0 0 8px 0; font-size: 20px; }
-  h2 { margin: 0 0 8px 0; font-size: 15px; }
-  p { margin: 0 0 10px 0; opacity: 0.95; }
-  .meta { font-size: 12px; opacity: 0.75; }
-  .list {
+  .hero .meta { margin-top: 6px; font-size: 12px; opacity: 0.78; }
+  .next-action {
+    margin-top: 10px;
+    padding: 10px;
+    border-radius: 10px;
+    border: 1px dashed var(--vscode-panel-border);
+    font-size: 12px;
+  }
+  .next-action.success {
+    border-style: solid;
+    color: var(--vscode-terminal-ansiGreen);
+  }
+  .section-title {
+    margin-top: 14px;
+    margin-bottom: 8px;
+    font-size: 14px;
+    letter-spacing: 0.3px;
+    text-transform: uppercase;
+    opacity: 0.8;
+  }
+  .check-list {
+    list-style: none;
     margin: 0;
     padding: 0;
-    list-style: none;
     border: 1px solid var(--vscode-panel-border);
-    border-radius: 10px;
+    border-radius: 12px;
     overflow: hidden;
-    margin-bottom: 12px;
   }
-  .check-item {
-    display: grid;
-    grid-template-columns: 64px 1fr;
-    gap: 8px;
+  .check-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
     padding: 10px 12px;
     border-bottom: 1px solid var(--vscode-panel-border);
   }
-  .check-item:last-child { border-bottom: none; }
+  .check-row:last-child { border-bottom: none; }
+  .check-row .label { font-weight: 600; }
+  .check-row .meta { font-size: 12px; opacity: 0.75; }
+  .right {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 6px;
+    min-width: 160px;
+  }
   .state {
     font-size: 11px;
     font-weight: 700;
-    letter-spacing: 0.4px;
+    padding: 2px 8px;
     border-radius: 999px;
-    text-align: center;
-    padding: 2px 6px;
-    height: fit-content;
   }
-  .check-item.ok .state { background: #1f7a3d; color: #fff; }
-  .check-item.todo .state { background: #8a6a00; color: #fff; }
-  .label { font-weight: 600; }
-  .grid {
+  .check-row.ok .state {
+    color: #fff;
+    background: #1f7a3d;
+  }
+  .check-row.todo .state {
+    color: #fff;
+    background: #8a6a00;
+  }
+  .tour-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-    gap: 12px;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 10px;
   }
-  .card {
+  .tour-card {
     border: 1px solid var(--vscode-panel-border);
-    border-radius: 10px;
+    border-radius: 12px;
     padding: 12px;
     background: color-mix(in srgb, var(--vscode-editor-background) 92%, var(--vscode-editorWidget-border) 8%);
   }
+  .tour-card h3 { font-size: 15px; }
+  .tour-card p { font-size: 13px; opacity: 0.9; margin-bottom: 10px; }
   .actions {
     display: flex;
     flex-wrap: wrap;
@@ -240,27 +351,35 @@ function buildHtml(model: QuickstartModel, firstRun: boolean): string {
     font-size: 12px;
     padding: 6px 10px;
     border-radius: 8px;
-    border: 1px solid var(--vscode-button-border, transparent);
-    background: var(--vscode-button-background);
-    color: var(--vscode-button-foreground);
+    border: 1px solid var(--vscode-panel-border);
+    color: var(--vscode-textLink-foreground);
+    background: transparent;
   }
   .btn:hover {
+    background: color-mix(in srgb, var(--vscode-button-hoverBackground) 35%, transparent);
+  }
+  .btn.primary {
+    background: var(--vscode-button-background);
+    color: var(--vscode-button-foreground);
+    border-color: var(--vscode-button-border, transparent);
+  }
+  .btn.primary:hover {
     background: var(--vscode-button-hoverBackground);
   }
-  .btn.ghost {
-    background: transparent;
-    color: var(--vscode-textLink-foreground);
-    border-color: var(--vscode-panel-border);
-  }
-  .philosophy {
-    border: 1px dashed var(--vscode-panel-border);
-    border-radius: 10px;
-    padding: 12px;
+  .mindset {
     margin-top: 12px;
+    border: 1px dashed var(--vscode-panel-border);
+    border-radius: 12px;
+    padding: 12px;
   }
-  ul {
+  .mindset ul {
     margin: 8px 0 0 18px;
     padding: 0;
+  }
+  @media (max-width: 760px) {
+    .right {
+      min-width: 130px;
+    }
   }
 </style>
 </head>
@@ -269,27 +388,37 @@ function buildHtml(model: QuickstartModel, firstRun: boolean): string {
     <h1>${escapeHtml(heading)}</h1>
     <p>${escapeHtml(intro)}</p>
     <div class="meta">Workspace: ${escapeHtml(model.workspaceName)} · Required checks: ${requiredDone}/${requiredTotal}</div>
+    ${nextAction}
   </section>
 
-  <ul class="list">${checks}</ul>
+  <h2 class="section-title">Setup Checkboard</h2>
+  <ul class="check-list">${checkRows}</ul>
 
-  ${sections}
+  <h2 class="section-title">Guided Click Tour</h2>
+  <div class="tour-grid">${tourCards}</div>
 
-  <section class="philosophy">
-    <h2>Design Mindset</h2>
+  <section class="mindset">
+    <h3>Design Mindset</h3>
     <ul>
-      <li>Context first: every action is templated from workspace/scenario/selection.</li>
-      <li>Observable by default: output, key lines, diagnostics, and audit trail are visible.</li>
-      <li>Composable modules: CLI discovery, tool wrappers, REST services share one runtime model.</li>
-      <li>Deterministic workflow: repeatable pipeline and matrix runs over ad-hoc shell habits.</li>
+      <li>Context first: command templates resolve from workspace, file, selection, and scenario values.</li>
+      <li>Observable by default: every run surfaces output, key lines, diagnostics, and audit records.</li>
+      <li>Modular by design: CLI discovery, wrappers, and REST actions share one runtime contract.</li>
+      <li>Repeatability over heroics: pipeline and matrix encourage deterministic team execution.</li>
     </ul>
   </section>
 </body>
 </html>`;
 }
 
-function commandUri(command: string): string {
-  return `command:${command}`;
+function actionButton(action: QuickstartAction): string {
+  return `<a class="btn${action.primary ? ' primary' : ''}" href="${commandUri(action.command, action.args)}">${escapeHtml(action.label)}</a>`;
+}
+
+function commandUri(command: string, args?: unknown[]): string {
+  if (!args || args.length === 0) {
+    return `command:${command}`;
+  }
+  return `command:${command}?${encodeURIComponent(JSON.stringify(args))}`;
 }
 
 function escapeHtml(value: string): string {

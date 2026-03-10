@@ -23,7 +23,8 @@
     "onCommand:cliRunner.setActiveScenario",
     "onCommand:cliRunner.runAutomotivePipeline",
     "onCommand:cliRunner.runVariantMatrix",
-    "onCommand:cliRunner.openQuickstart"
+    "onCommand:cliRunner.openQuickstart",
+    "onCommand:cliRunner.openAuditLog"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -132,6 +133,10 @@
           "light": "resources/icons/light/help.svg",
           "dark": "resources/icons/dark/help.svg"
         }
+      },
+      {
+        "command": "cliRunner.openAuditLog",
+        "title": "CLI Runner: Open Audit Log"
       }
     ],
     "menus": {

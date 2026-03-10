@@ -1,4 +1,7 @@
 import * as vscode from 'vscode';
+import { promises as fs } from 'fs';
+import * as path from 'path';
+import { readIntegrationConfig } from './core/config';
 import { ResultPresenter } from './core/resultPresenter';
 import { QuickstartGuide } from './core/quickstart';
 import { CliModule } from './modules/cliModule';
@@ -48,6 +51,33 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     vscode.commands.registerCommand('cliRunner.openQuickstart', async () => {
       await quickstart.open();
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('cliRunner.openAuditLog', async () => {
+      const workspace = vscode.workspace.workspaceFolders?.[0];
+      if (!workspace) {
+        vscode.window.showWarningMessage('Open a workspace folder first.');
+        return;
+      }
+
+      const integration = readIntegrationConfig();
+      const configuredPath = integration.automotive.auditLogFile;
+      const filePath = path.isAbsolute(configuredPath)
+        ? configuredPath
+        : path.join(workspace.uri.fsPath, configuredPath);
+
+      try {
+        await fs.mkdir(path.dirname(filePath), { recursive: true });
+        await fs.appendFile(filePath, '', 'utf8');
+      } catch (error) {
+        vscode.window.showErrorMessage(`Failed to prepare audit log file: ${error instanceof Error ? error.message : String(error)}`);
+        return;
+      }
+
+      const document = await vscode.workspace.openTextDocument(vscode.Uri.file(filePath));
+      await vscode.window.showTextDocument(document, vscode.ViewColumn.Beside, true);
     })
   );
 

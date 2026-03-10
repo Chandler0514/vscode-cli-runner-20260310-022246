@@ -268,14 +268,16 @@ Quickstart implementation:
 
 - core file: `src/core/quickstart.ts`
 - command: `cliRunner.openQuickstart`
-- first-run auto open flag: extension global state key `cliRunner.quickstart.shown.v1`
+- command: `cliRunner.openAuditLog`
+- first-run auto open flag: extension global state key `cliRunner.quickstart.shown.v2`
 - activation wiring: `src/extension.ts`
 
 Behavior:
 
 1. First activation auto-opens quickstart page once.
 2. Users can re-open it from command palette or view title toolbar help icon.
-3. Page includes setup checks, guided experience path, and design mindset.
+3. Page includes clickable setup checks, guided click-tour path, and design mindset.
+4. Tour flow includes direct links for settings search, module focusing, and opening audit log.
 
 View toolbar icon migration:
 

@@ -4,6 +4,14 @@
   "description": "Find configured executables in the workspace, parse commands from -h, and run them from a sidebar.",
   "version": "0.0.7",
   "publisher": "chandler-local",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Chandler0514/vscode-cli-runner-20260310-022246.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Chandler0514/vscode-cli-runner-20260310-022246/issues"
+  },
+  "homepage": "https://github.com/Chandler0514/vscode-cli-runner-20260310-022246#readme",
   "engines": {
     "vscode": "^1.90.0"
   },

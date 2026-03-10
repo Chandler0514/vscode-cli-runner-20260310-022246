@@ -134,12 +134,16 @@ class RestProvider implements vscode.TreeDataProvider<RestTreeNode> {
   private readonly emitter = new vscode.EventEmitter<RestTreeNode | void>();
   public readonly onDidChangeTreeData = this.emitter.event;
 
+  public constructor(
+    private readonly getActions: () => readonly RestAction[]
+  ) {}
+
   public refresh(): void {
     this.emitter.fire();
   }
 
   public getAllActionNodes(): RestActionNode[] {
-    return REST_ACTIONS.map((action) => new RestActionNode(action));
+    return this.getActions().map((action) => new RestActionNode(action));
   }
 
   public getTreeItem(element: RestTreeNode): vscode.TreeItem {
@@ -151,17 +155,18 @@ class RestProvider implements vscode.TreeDataProvider<RestTreeNode> {
       return [new InfoNode('Open a workspace folder to use REST Services')];
     }
     if (!element) {
-      return Array.from(new Set(REST_ACTIONS.map((action) => action.group))).map((group) => new RestGroupNode(group));
+      return Array.from(new Set(this.getActions().map((action) => action.group))).map((group) => new RestGroupNode(group));
     }
     if (element instanceof RestGroupNode) {
-      return REST_ACTIONS.filter((action) => action.group === element.group).map((action) => new RestActionNode(action));
+      return this.getActions().filter((action) => action.group === element.group).map((action) => new RestActionNode(action));
     }
     return [];
   }
 }
 
 export class RestModule {
-  private readonly provider = new RestProvider();
+  private readonly externalActions: RestAction[] = [];
+  private readonly provider = new RestProvider(() => this.getActions());
 
   public constructor(
     private readonly output: vscode.OutputChannel,
@@ -186,6 +191,60 @@ export class RestModule {
 
   public refresh(): void {
     this.provider.refresh();
+  }
+
+  public listActionSummaries(): Array<{
+    readonly id: string;
+    readonly label: string;
+    readonly description: string;
+    readonly group: string;
+    readonly method: RestAction['method'];
+    readonly source: 'builtin' | 'external';
+  }> {
+    const builtinIds = new Set(REST_ACTIONS.map((item) => item.id));
+    return this.getActions().map((action) => ({
+      id: action.id,
+      label: action.label,
+      description: action.description,
+      group: action.group,
+      method: action.method,
+      source: builtinIds.has(action.id) ? 'builtin' as const : 'external' as const
+    }));
+  }
+
+  public async runActionById(actionId: string): Promise<boolean> {
+    const action = this.getActions().find((item) => item.id === actionId);
+    if (!action) {
+      return false;
+    }
+    await this.runAction(action);
+    return true;
+  }
+
+  public registerExternalActions(actions: readonly RestAction[]): vscode.Disposable {
+    const addedIds: string[] = [];
+    actions.forEach((candidate) => {
+      if (this.getActions().some((item) => item.id === candidate.id)) {
+        this.output.appendLine(`[interop] Skip external REST action "${candidate.id}" because id already exists.`);
+        return;
+      }
+      this.externalActions.push(cloneRestAction(candidate));
+      addedIds.push(candidate.id);
+    });
+
+    if (addedIds.length > 0) {
+      this.refresh();
+    }
+
+    return new vscode.Disposable(() => {
+      if (addedIds.length === 0) {
+        return;
+      }
+      const set = new Set(addedIds);
+      const remaining = this.externalActions.filter((item) => !set.has(item.id));
+      this.externalActions.splice(0, this.externalActions.length, ...remaining);
+      this.refresh();
+    });
   }
 
   private async pickAction(): Promise<RestActionNode | undefined> {
@@ -272,6 +331,10 @@ export class RestModule {
     });
   }
 
+  private getActions(): readonly RestAction[] {
+    return [...REST_ACTIONS, ...this.externalActions];
+  }
+
   private async safeAudit(
     workspacePath: string,
     auditLogFile: string,
@@ -295,4 +358,12 @@ function notifyRest(result: { ok: boolean; status: number; statusText: string; c
     return;
   }
   vscode.window.showWarningMessage(`REST request failed (${result.status} ${result.statusText}).`);
+}
+
+function cloneRestAction(action: RestAction): RestAction {
+  return {
+    ...action,
+    prompt: action.prompt ? { ...action.prompt } : undefined,
+    requiredEnvVars: action.requiredEnvVars ? [...action.requiredEnvVars] : undefined
+  };
 }

@@ -1,7 +1,10 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { spawn } from 'child_process';
-import { CapturedLine, ProcessResult, ProcessRunViewModel, RestResult, RestRunViewModel, StreamName } from './types';
+import { StringDecoder } from 'string_decoder';
+import * as iconv from 'iconv-lite';
+import { readIntegrationConfig } from './config';
+import { CapturedLine, HttpMethod, ProcessResult, ProcessRunViewModel, RestResult, RestRunViewModel, StreamName } from './types';
 import { formatCommand } from './cliDiscovery';
 
 export async function runProcessWithProgress(options: {
@@ -88,7 +91,7 @@ export async function runRestWithProgress(options: {
       title: options.title,
       cancellable: true
     },
-    async (_progress, token) => executeRest(options.method, options.url, options.headers, options.body, options.timeoutMs, token)
+    async (_progress, token) => executeRestRaw(options.method, options.url, options.headers, options.body, options.timeoutMs, token)
   );
 
   options.output.appendLine(`\nREST finished: ${result.status} ${result.statusText} (${result.durationMs}ms)`);
@@ -117,6 +120,9 @@ export async function executeProcessRaw(
   return new Promise<ProcessResult>((resolve, reject) => {
     const started = Date.now();
     const invocation = resolveInvocation(executable, args);
+    const outputEncoding = resolveWindowsOutputEncoding();
+    const stdoutDecoder = createOutputDecoder(outputEncoding);
+    const stderrDecoder = createOutputDecoder(outputEncoding);
     const child = spawn(invocation.command, invocation.args, {
       cwd,
       shell: false,
@@ -144,13 +150,13 @@ export async function executeProcessRaw(
     };
 
     child.stdout.on('data', (chunk: Buffer) => {
-      const text = chunk.toString();
+      const text = stdoutDecoder.write(chunk);
       stdout += text;
       outRemainder = emit(text, 'stdout', outRemainder);
     });
 
     child.stderr.on('data', (chunk: Buffer) => {
-      const text = chunk.toString();
+      const text = stderrDecoder.write(chunk);
       stderr += text;
       errRemainder = emit(text, 'stderr', errRemainder);
     });
@@ -170,6 +176,16 @@ export async function executeProcessRaw(
       }
       settled = true;
       cancelSub.dispose();
+      const outTail = stdoutDecoder.end();
+      if (outTail) {
+        stdout += outTail;
+        outRemainder = emit(outTail, 'stdout', outRemainder);
+      }
+      const errTail = stderrDecoder.end();
+      if (errTail) {
+        stderr += errTail;
+        errRemainder = emit(errTail, 'stderr', errRemainder);
+      }
       if (outRemainder) {
         onLine(outRemainder, 'stdout');
       }
@@ -193,9 +209,10 @@ function resolveInvocation(executable: string, args: string[]): { command: strin
   }
   const ext = path.extname(executable).toLowerCase();
   if (ext === '.cmd' || ext === '.bat') {
+    const cmdLine = [executable, ...args].map(quoteForCmd).join(' ');
     return {
       command: process.env.ComSpec || 'cmd.exe',
-      args: ['/d', '/s', '/c', executable, ...args]
+      args: ['/d', '/s', '/c', cmdLine]
     };
   }
   if (ext === '.ps1') {
@@ -207,8 +224,55 @@ function resolveInvocation(executable: string, args: string[]): { command: strin
   return { command: executable, args };
 }
 
-async function executeRest(
-  method: 'GET' | 'POST',
+function quoteForCmd(value: string): string {
+  if (value.length === 0) {
+    return '""';
+  }
+  if (!/[\s"&|<>^()%!]/.test(value)) {
+    return value;
+  }
+  const escaped = value.replace(/(["^])/g, '^$1');
+  return `"${escaped}"`;
+}
+
+function resolveWindowsOutputEncoding(): 'utf8' | 'gb18030' {
+  if (process.platform !== 'win32') {
+    return 'utf8';
+  }
+
+  const configured = readIntegrationConfig().windowsOutputEncoding;
+  if (configured === 'utf8' || configured === 'gb18030') {
+    return configured;
+  }
+
+  const language = (vscode.env.language || '').toLowerCase();
+  if (language.startsWith('zh')) {
+    return 'gb18030';
+  }
+  return 'utf8';
+}
+
+function createOutputDecoder(encoding: 'utf8' | 'gb18030'): {
+  readonly write: (chunk: Buffer) => string;
+  readonly end: () => string;
+} {
+  if (encoding === 'utf8') {
+    const decoder = new StringDecoder('utf8');
+    return {
+      write: (chunk) => decoder.write(chunk),
+      end: () => decoder.end()
+    };
+  }
+
+  const decoder = iconv.getDecoder('gb18030');
+  return {
+    write: (chunk) => decoder.write(chunk),
+    end: () => decoder.end() ?? ''
+  };
+}
+
+export async function executeRestRaw(
+  method: HttpMethod,
   url: string,
   headers: Record<string, string>,
   body: string | undefined,

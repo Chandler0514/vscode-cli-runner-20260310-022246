@@ -37,6 +37,8 @@ export interface IntegrationConfig {
   readonly almRestToken: string;
   readonly restTimeoutMs: number;
   readonly restExtraHeaders: Record<string, string>;
+  readonly windowsOutputEncoding: 'auto' | 'utf8' | 'gb18030';
+  readonly update: UpdateConfig;
   readonly automotive: AutomotiveConfig;
 }
 
@@ -186,4 +188,10 @@ export interface QualityGateResult {
   readonly maxWarnings: number;
   readonly summary: DiagnosticSummary;
   readonly reason?: string;
+}
+
+export interface UpdateConfig {
+  readonly enabled: boolean;
+  readonly intervalHours: number;
+  readonly feedUrl: string;
 }

@@ -24,7 +24,20 @@
     "onCommand:cliRunner.runAutomotivePipeline",
     "onCommand:cliRunner.runVariantMatrix",
     "onCommand:cliRunner.openQuickstart",
-    "onCommand:cliRunner.openAuditLog"
+    "onCommand:cliRunner.openAuditLog",
+    "onCommand:cliRunner.checkForUpdates",
+    "onCommand:cliRunner.interop.getCapabilities",
+    "onCommand:cliRunner.interop.listToolActions",
+    "onCommand:cliRunner.interop.listRestActions",
+    "onCommand:cliRunner.interop.runToolActionById",
+    "onCommand:cliRunner.interop.runRestActionById",
+    "onCommand:cliRunner.interop.executeProcess",
+    "onCommand:cliRunner.interop.executeRest",
+    "onCommand:cliRunner.interop.callExtensionApi",
+    "onCommand:cliRunner.interop.registerToolDefinitions",
+    "onCommand:cliRunner.interop.registerRestActions",
+    "onCommand:cliRunner.interop.unregister",
+    "onCommand:cliRunner.openInteropPlayground"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -137,6 +150,66 @@
       {
         "command": "cliRunner.openAuditLog",
         "title": "CLI Runner: Open Audit Log"
+      },
+      {
+        "command": "cliRunner.checkForUpdates",
+        "title": "CLI Runner: Check For Updates",
+        "icon": {
+          "light": "resources/icons/light/update.svg",
+          "dark": "resources/icons/dark/update.svg"
+        }
+      },
+      {
+        "command": "cliRunner.interop.getCapabilities",
+        "title": "CLI Runner: Interop Get Capabilities"
+      },
+      {
+        "command": "cliRunner.interop.listToolActions",
+        "title": "CLI Runner: Interop List Tool Actions"
+      },
+      {
+        "command": "cliRunner.interop.listRestActions",
+        "title": "CLI Runner: Interop List REST Actions"
+      },
+      {
+        "command": "cliRunner.interop.runToolActionById",
+        "title": "CLI Runner: Interop Run Tool Action By Id"
+      },
+      {
+        "command": "cliRunner.interop.runRestActionById",
+        "title": "CLI Runner: Interop Run REST Action By Id"
+      },
+      {
+        "command": "cliRunner.interop.executeProcess",
+        "title": "CLI Runner: Interop Execute Process"
+      },
+      {
+        "command": "cliRunner.interop.executeRest",
+        "title": "CLI Runner: Interop Execute REST"
+      },
+      {
+        "command": "cliRunner.interop.callExtensionApi",
+        "title": "CLI Runner: Interop Call Extension API"
+      },
+      {
+        "command": "cliRunner.interop.registerToolDefinitions",
+        "title": "CLI Runner: Interop Register Tool Definitions"
+      },
+      {
+        "command": "cliRunner.interop.registerRestActions",
+        "title": "CLI Runner: Interop Register REST Actions"
+      },
+      {
+        "command": "cliRunner.interop.unregister",
+        "title": "CLI Runner: Interop Unregister Token"
+      },
+      {
+        "command": "cliRunner.openInteropPlayground",
+        "title": "CLI Runner: Open Interop Playground",
+        "icon": {
+          "light": "resources/icons/light/interop.svg",
+          "dark": "resources/icons/dark/interop.svg"
+        }
       }
     ],
     "menus": {
@@ -180,6 +253,16 @@
           "command": "cliRunner.openQuickstart",
           "when": "view == cliRunner.modules.commands || view == cliRunner.modules.tools || view == cliRunner.modules.rest",
           "group": "navigation@8"
+        },
+        {
+          "command": "cliRunner.checkForUpdates",
+          "when": "view == cliRunner.modules.commands || view == cliRunner.modules.tools || view == cliRunner.modules.rest",
+          "group": "navigation@9"
+        },
+        {
+          "command": "cliRunner.openInteropPlayground",
+          "when": "view == cliRunner.modules.commands || view == cliRunner.modules.tools || view == cliRunner.modules.rest",
+          "group": "navigation@10"
         }
       ]
     },
@@ -222,6 +305,16 @@
           "minimum": 1000,
           "maximum": 120000,
           "description": "Timeout in milliseconds for calling executable help output."
+        },
+        "cliRunner.windowsOutputEncoding": {
+          "type": "string",
+          "default": "auto",
+          "enum": [
+            "auto",
+            "utf8",
+            "gb18030"
+          ],
+          "description": "Windows process output decoding. Use gb18030 when Chinese output is garbled."
         },
         "cliRunner.toolExecutables": {
           "type": "object",
@@ -386,6 +479,23 @@
           "type": "string",
           "default": ".cli-runner/audit-log.jsonl",
           "description": "Relative or absolute path for JSONL execution audit log."
+        },
+        "cliRunner.updateCheckEnabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable automatic plugin update check on startup."
+        },
+        "cliRunner.updateCheckIntervalHours": {
+          "type": "number",
+          "default": 24,
+          "minimum": 1,
+          "maximum": 168,
+          "description": "Hours between automatic update checks."
+        },
+        "cliRunner.updateFeedUrl": {
+          "type": "string",
+          "default": "https://api.github.com/repos/Chandler0514/vscode-cli-runner-20260310-022246/releases/latest",
+          "description": "Release feed URL used to check latest available plugin version."
         }
       }
     }
@@ -400,5 +510,8 @@
     "@types/node": "^20.14.8",
     "@types/vscode": "^1.90.0",
     "typescript": "^5.5.2"
+  },
+  "dependencies": {
+    "iconv-lite": "^0.6.3"
   }
 }

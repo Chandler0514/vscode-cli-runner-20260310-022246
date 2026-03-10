@@ -190,7 +190,8 @@ The extension now includes automotive-oriented capabilities for embedded C workf
 
 - CMake / GNU Make
 - IAR / Green Hills / Tasking bootstrap actions
-- static analysis (`clang-tidy`, `cppcheck`, `pclint`)
+- static analysis (`clang-tidy`, `cppcheck`, `pclint`, `clang-format`, `scan-build`)
+- dynamic/runtime checks (`ctest`, `gcovr`, `valgrind`, `qemu-system-arm`)
 - flashing/debug bootstrap (`openocd`, `JLinkExe`)
 - workflow actions (scenario, pipeline, variant matrix, map analysis)
 
@@ -260,3 +261,23 @@ Current summary includes:
 - `.data`
 - `.bss`
 - top section size ranking
+
+## 8. Quickstart And UX Entry Points
+
+Quickstart implementation:
+
+- core file: `src/core/quickstart.ts`
+- command: `cliRunner.openQuickstart`
+- first-run auto open flag: extension global state key `cliRunner.quickstart.shown.v1`
+- activation wiring: `src/extension.ts`
+
+Behavior:
+
+1. First activation auto-opens quickstart page once.
+2. Users can re-open it from command palette or view title toolbar help icon.
+3. Page includes setup checks, guided experience path, and design mindset.
+
+View toolbar icon migration:
+
+- Commands in `view/title` now use icon contributions from `resources/icons/{light,dark}`.
+- This keeps actions compact while retaining intent via command tooltip/title.

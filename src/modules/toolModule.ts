@@ -262,6 +262,127 @@ const TOOL_DEFS: ToolDef[] = [
     ]
   },
   {
+    id: 'embedded.clangFormat',
+    label: 'clang-format',
+    domain: 'Embedded',
+    executableKey: 'clang-format',
+    defaultExecutable: 'clang-format',
+    actions: [
+      {
+        id: 'quality.clangFormatCheck',
+        label: 'Format Check (Active File)',
+        description: 'Run clang-format dry-run check on active file',
+        kind: 'cli',
+        argsTemplate: ['--dry-run', '--Werror', '${activeFilePath}'],
+        requiresActiveFile: true
+      },
+      {
+        id: 'quality.clangFormatApply',
+        label: 'Format Apply (Active File)',
+        description: 'Format active file in-place',
+        kind: 'cli',
+        argsTemplate: ['-i', '${activeFilePath}'],
+        requiresActiveFile: true
+      }
+    ]
+  },
+  {
+    id: 'embedded.scanBuild',
+    label: 'scan-build',
+    domain: 'Embedded',
+    executableKey: 'scan-build',
+    defaultExecutable: 'scan-build',
+    actions: [
+      {
+        id: 'quality.scanBuild',
+        label: 'scan-build (Scenario Build)',
+        description: 'Run Clang Static Analyzer on current scenario build directory',
+        kind: 'cli',
+        argsTemplate: ['--status-bugs', 'cmake', '--build', '${workspacePath}/build/${scenarioName}']
+      }
+    ]
+  },
+  {
+    id: 'embedded.ctest',
+    label: 'CTest',
+    domain: 'Embedded',
+    executableKey: 'ctest',
+    defaultExecutable: 'ctest',
+    actions: [
+      {
+        id: 'dynamic.ctestAll',
+        label: 'Run Unit Tests (All)',
+        description: 'Run all tests from scenario build directory',
+        kind: 'cli',
+        argsTemplate: ['--test-dir', '${workspacePath}/build/${scenarioName}', '--output-on-failure']
+      },
+      {
+        id: 'dynamic.ctestSmoke',
+        label: 'Run Smoke Tests',
+        description: 'Run tests labeled smoke in scenario build directory',
+        kind: 'cli',
+        argsTemplate: ['--test-dir', '${workspacePath}/build/${scenarioName}', '-L', 'smoke', '--output-on-failure']
+      }
+    ]
+  },
+  {
+    id: 'embedded.gcovr',
+    label: 'gcovr',
+    domain: 'Embedded',
+    executableKey: 'gcovr',
+    defaultExecutable: 'gcovr',
+    actions: [
+      {
+        id: 'dynamic.coverageText',
+        label: 'Coverage Summary (Text)',
+        description: 'Generate coverage summary for scenario build',
+        kind: 'cli',
+        argsTemplate: ['-r', '${workspacePath}', '${workspacePath}/build/${scenarioName}']
+      },
+      {
+        id: 'dynamic.coverageXml',
+        label: 'Coverage Report (XML)',
+        description: 'Generate Cobertura XML coverage report',
+        kind: 'cli',
+        argsTemplate: ['-r', '${workspacePath}', '${workspacePath}/build/${scenarioName}', '--xml-pretty', '-o', '${workspacePath}/build/${scenarioName}/coverage.xml']
+      }
+    ]
+  },
+  {
+    id: 'embedded.valgrind',
+    label: 'Valgrind',
+    domain: 'Embedded',
+    executableKey: 'valgrind',
+    defaultExecutable: 'valgrind',
+    actions: [
+      {
+        id: 'dynamic.valgrindMemcheck',
+        label: 'Memcheck (Host Binary)',
+        description: 'Run Valgrind memcheck for host-executable tests',
+        kind: 'cli',
+        argsTemplate: ['--tool=memcheck', '--leak-check=full', '--track-origins=yes', '--error-exitcode=101', '${hostBinary}'],
+        prompt: { variable: 'hostBinary', title: 'Host Binary Path', prompt: 'Enter host binary path for memcheck' }
+      }
+    ]
+  },
+  {
+    id: 'embedded.qemu',
+    label: 'QEMU',
+    domain: 'Embedded',
+    executableKey: 'qemu-system-arm',
+    defaultExecutable: 'qemu-system-arm',
+    actions: [
+      {
+        id: 'dynamic.qemuSmoke',
+        label: 'QEMU Smoke Run',
+        description: 'Boot firmware in QEMU for smoke validation',
+        kind: 'cli',
+        argsTemplate: ['-M', '${qemuBoard}', '-nographic', '-kernel', '${imagePath}'],
+        prompt: { variable: 'imagePath', title: 'Firmware Image', prompt: 'Enter firmware image path for QEMU run' }
+      }
+    ]
+  },
+  {
     id: 'embedded.openocd',
     label: 'OpenOCD',
     domain: 'Embedded',

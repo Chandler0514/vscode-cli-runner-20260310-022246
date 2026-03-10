@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { ResultPresenter } from './core/resultPresenter';
+import { QuickstartGuide } from './core/quickstart';
 import { CliModule } from './modules/cliModule';
 import { ToolModule } from './modules/toolModule';
 import { RestModule } from './modules/restModule';
@@ -7,6 +8,7 @@ import { RestModule } from './modules/restModule';
 export function activate(context: vscode.ExtensionContext): void {
   const output = vscode.window.createOutputChannel('CLI Runner');
   const presenter = new ResultPresenter();
+  const quickstart = new QuickstartGuide(context);
 
   const cliModule = new CliModule(output, presenter);
   const toolModule = new ToolModule(output, presenter);
@@ -44,6 +46,12 @@ export function activate(context: vscode.ExtensionContext): void {
   );
 
   context.subscriptions.push(
+    vscode.commands.registerCommand('cliRunner.openQuickstart', async () => {
+      await quickstart.open();
+    })
+  );
+
+  context.subscriptions.push(
     vscode.workspace.onDidChangeConfiguration(async (event) => {
       if (event.affectsConfiguration('cliRunner')) {
         await refreshAll();
@@ -58,6 +66,7 @@ export function activate(context: vscode.ExtensionContext): void {
   );
 
   void refreshAll();
+  void quickstart.maybeShowOnFirstRun();
 
   async function refreshAll(): Promise<void> {
     await cliModule.refresh();

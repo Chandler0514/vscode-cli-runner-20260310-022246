@@ -22,7 +22,8 @@
     "onCommand:cliRunner.runRestAction",
     "onCommand:cliRunner.setActiveScenario",
     "onCommand:cliRunner.runAutomotivePipeline",
-    "onCommand:cliRunner.runVariantMatrix"
+    "onCommand:cliRunner.runVariantMatrix",
+    "onCommand:cliRunner.openQuickstart"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -54,39 +55,83 @@
     "commands": [
       {
         "command": "cliRunner.openView",
-        "title": "CLI Runner: Open View"
+        "title": "CLI Runner: Open View",
+        "icon": {
+          "light": "resources/icons/light/view.svg",
+          "dark": "resources/icons/dark/view.svg"
+        }
       },
       {
         "command": "cliRunner.refresh",
-        "title": "CLI Runner: Refresh"
+        "title": "CLI Runner: Refresh",
+        "icon": {
+          "light": "resources/icons/light/refresh.svg",
+          "dark": "resources/icons/dark/refresh.svg"
+        }
       },
       {
         "command": "cliRunner.pickExecutable",
-        "title": "CLI Runner: Add Executable Name"
+        "title": "CLI Runner: Add Executable Name",
+        "icon": {
+          "light": "resources/icons/light/add.svg",
+          "dark": "resources/icons/dark/add.svg"
+        }
       },
       {
         "command": "cliRunner.runCommand",
-        "title": "CLI Runner: Run Command"
+        "title": "CLI Runner: Run Command",
+        "icon": {
+          "light": "resources/icons/light/play.svg",
+          "dark": "resources/icons/dark/play.svg"
+        }
       },
       {
         "command": "cliRunner.runToolAction",
-        "title": "CLI Runner: Run Tool Wrapper Action"
+        "title": "CLI Runner: Run Tool Wrapper Action",
+        "icon": {
+          "light": "resources/icons/light/tools.svg",
+          "dark": "resources/icons/dark/tools.svg"
+        }
       },
       {
         "command": "cliRunner.runRestAction",
-        "title": "CLI Runner: Run REST Resource Action"
+        "title": "CLI Runner: Run REST Resource Action",
+        "icon": {
+          "light": "resources/icons/light/globe.svg",
+          "dark": "resources/icons/dark/globe.svg"
+        }
       },
       {
         "command": "cliRunner.setActiveScenario",
-        "title": "CLI Runner: Set Active Scenario"
+        "title": "CLI Runner: Set Active Scenario",
+        "icon": {
+          "light": "resources/icons/light/target.svg",
+          "dark": "resources/icons/dark/target.svg"
+        }
       },
       {
         "command": "cliRunner.runAutomotivePipeline",
-        "title": "CLI Runner: Run Automotive Pipeline"
+        "title": "CLI Runner: Run Automotive Pipeline",
+        "icon": {
+          "light": "resources/icons/light/rocket.svg",
+          "dark": "resources/icons/dark/rocket.svg"
+        }
       },
       {
         "command": "cliRunner.runVariantMatrix",
-        "title": "CLI Runner: Run Variant Matrix"
+        "title": "CLI Runner: Run Variant Matrix",
+        "icon": {
+          "light": "resources/icons/light/matrix.svg",
+          "dark": "resources/icons/dark/matrix.svg"
+        }
+      },
+      {
+        "command": "cliRunner.openQuickstart",
+        "title": "CLI Runner: Open Quickstart",
+        "icon": {
+          "light": "resources/icons/light/help.svg",
+          "dark": "resources/icons/dark/help.svg"
+        }
       }
     ],
     "menus": {
@@ -125,6 +170,11 @@
           "command": "cliRunner.runRestAction",
           "when": "view == cliRunner.modules.rest",
           "group": "navigation@2"
+        },
+        {
+          "command": "cliRunner.openQuickstart",
+          "when": "view == cliRunner.modules.commands || view == cliRunner.modules.tools || view == cliRunner.modules.rest",
+          "group": "navigation@8"
         }
       ]
     },
@@ -182,8 +232,14 @@
             "gbuild": "gbuild",
             "ctc": "ctc",
             "clang-tidy": "clang-tidy",
+            "clang-format": "clang-format",
+            "scan-build": "scan-build",
             "cppcheck": "cppcheck",
             "pclint": "pclint",
+            "ctest": "ctest",
+            "gcovr": "gcovr",
+            "valgrind": "valgrind",
+            "qemu-system-arm": "qemu-system-arm",
             "openocd": "openocd",
             "JLinkExe": "JLinkExe"
           },

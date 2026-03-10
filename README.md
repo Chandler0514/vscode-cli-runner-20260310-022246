@@ -52,6 +52,18 @@ Execution experience:
   - full output (expand/collapse)
   - REST request/response metadata and body (formatted JSON when possible)
 
+### 5) Quickstart onboarding (first-run + on-demand)
+
+On first activation, CLI Runner opens a guided quickstart page automatically.
+
+The guide helps teams:
+
+- complete required setup (workspace, executable discovery, scenario)
+- run one end-to-end experience across the 3 modules
+- align on plugin design mindset (context-first, observable, deterministic workflow)
+
+You can re-open anytime with `CLI Runner: Open Quickstart`.
+
 ## Settings
 
 - `cliRunner.executableNames`: executable names or workspace-relative paths.
@@ -117,6 +129,20 @@ Then run in `Tool Wrappers`:
 3. `Automotive Workflows -> Run Variant Matrix`
 4. `Automotive Workflows -> Analyze .map Size`
 
+Recommended analysis interfaces in `Tool Wrappers -> Embedded`:
+
+- Static:
+  - `Code Quality -> clang-tidy (Active File)`
+  - `cppcheck -> cppcheck (Workspace)`
+  - `PC-lint -> PC-lint (Workspace)`
+  - `clang-format -> Format Check/Apply (Active File)`
+  - `scan-build -> scan-build (Scenario Build)`
+- Dynamic:
+  - `CTest -> Run Unit Tests (All)/Run Smoke Tests`
+  - `gcovr -> Coverage Summary (Text)/Coverage Report (XML)`
+  - `Valgrind -> Memcheck (Host Binary)`
+  - `QEMU -> QEMU Smoke Run`
+
 ## Commands
 
 - `CLI Runner: Open View`
@@ -128,6 +154,7 @@ Then run in `Tool Wrappers`:
 - `CLI Runner: Set Active Scenario`
 - `CLI Runner: Run Automotive Pipeline`
 - `CLI Runner: Run Variant Matrix`
+- `CLI Runner: Open Quickstart`
 
 ## Development
 

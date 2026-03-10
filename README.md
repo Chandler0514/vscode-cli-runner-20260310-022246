@@ -66,6 +66,37 @@ The guide helps teams:
 
 You can re-open anytime with `CLI Runner: Open Quickstart`.
 
+### 6) Plugin interop API (callable + extensible)
+
+CLI Runner now exposes a typed public API for other VS Code extensions.
+
+Interop capabilities:
+
+- list and run Tool/REST actions by ID
+- execute raw process/REST requests through CLI Runner runtime
+- dynamically register external Tool definitions and REST actions
+- unregister dynamic registrations with token lifecycle
+- call another extension's public API through a unified bridge
+- subscribe to action execution events
+
+Integration patterns:
+
+- Type-safe: activate `chandler-local.cli-runner-sidebar` and use returned API object
+- Command-based: use `cliRunner.interop.*` commands for protocol-style invocation
+- Playground: use `CLI Runner: Open Interop Playground` for runnable integration snippets
+
+Type-safe integration example:
+
+```ts
+const ext = vscode.extensions.getExtension('chandler-local.cli-runner-sidebar');
+const api = await ext?.activate();
+if (!api) { return; }
+
+const caps = api.getCapabilities();
+const tools = api.listToolActions();
+await api.runToolActionById('automotive.pipeline');
+```
+
 ## Settings
 
 - `cliRunner.executableNames`: executable names or workspace-relative paths.
@@ -73,6 +104,7 @@ You can re-open anytime with `CLI Runner: Open Quickstart`.
 - `cliRunner.searchExcludeGlob`: search exclude glob.
 - `cliRunner.maxExecutables`: max discovered executables.
 - `cliRunner.helpTimeoutMs`: timeout for help process.
+- `cliRunner.windowsOutputEncoding`: Windows output decode mode (`auto` / `utf8` / `gb18030`), useful for Chinese output garble.
 - `cliRunner.toolExecutables`: executable mapping for tool wrappers.
 - `cliRunner.restBaseUrl`: REST Services base URL.
 - `cliRunner.almRestBaseUrl`: ALM REST tool base URL.
@@ -87,6 +119,9 @@ You can re-open anytime with `CLI Runner: Open Quickstart`.
 - `cliRunner.qualityGateMaxWarnings` / `cliRunner.qualityGateMaxErrors`: diagnostic quality gate thresholds.
 - `cliRunner.enableDiagnostics`: publish parsed compiler diagnostics to Problems.
 - `cliRunner.auditLogFile`: execution audit JSONL path.
+- `cliRunner.updateCheckEnabled`: enable startup update checks.
+- `cliRunner.updateCheckIntervalHours`: update check interval.
+- `cliRunner.updateFeedUrl`: update feed URL.
 
 ## Automotive Quick Start (Embedded C)
 
@@ -158,6 +193,8 @@ Recommended analysis interfaces in `Tool Wrappers -> Embedded`:
 - `CLI Runner: Run Variant Matrix`
 - `CLI Runner: Open Quickstart`
 - `CLI Runner: Open Audit Log`
+- `CLI Runner: Check For Updates`
+- `CLI Runner: Open Interop Playground`
 
 ## Development
 

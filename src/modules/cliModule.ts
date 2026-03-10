@@ -174,6 +174,68 @@ export class CliModule {
     await this.provider.refresh();
   }
 
+  public listCommandSummaries(): Array<{
+    readonly executablePath: string;
+    readonly executableName: string;
+    readonly command: string;
+    readonly description: string;
+  }> {
+    return this.provider.getEntries().flatMap((entry) => {
+      const commands = entry.commands.length > 0 ? entry.commands : [{ command: '', description: 'Run executable directly.' }];
+      return commands.map((commandDef) => ({
+        executablePath: entry.path,
+        executableName: entry.name,
+        command: commandDef.command,
+        description: commandDef.description
+      }));
+    });
+  }
+
+  public async runCommandByRef(options: {
+    readonly executablePath: string;
+    readonly command: string;
+    readonly title?: string;
+    readonly cwd?: string;
+  }): Promise<boolean> {
+    const workspace = vscode.workspace.workspaceFolders?.[0];
+    const cwd = options.cwd ?? workspace?.uri.fsPath;
+    if (!cwd) {
+      vscode.window.showErrorMessage('Open a workspace folder first.');
+      return false;
+    }
+
+    const integration = readIntegrationConfig();
+    const scenario = getScenarioValues(integration.automotive);
+    const baseModel = await runProcessWithProgress({
+      title: options.title ?? `${pathBaseName(options.executablePath)} ${options.command}`.trim(),
+      executable: options.executablePath,
+      args: splitArgs(options.command),
+      cwd,
+      output: this.output
+    });
+
+    const model = this.enrichModel(baseModel, cwd, integration);
+    this.presenter.showProcess(model);
+    notifyProcess(model.result);
+
+    try {
+      await appendAuditRecord(cwd, integration.automotive.auditLogFile, {
+        timestamp: new Date().toISOString(),
+        kind: 'process',
+        title: model.title,
+        scenarioName: scenario.scenarioName,
+        success: !model.result.cancelled && model.result.exitCode === 0,
+        durationMs: model.result.durationMs,
+        exitCode: model.result.exitCode,
+        detail: model.displayCommand
+      });
+    } catch (error) {
+      this.output.appendLine(`[audit] Failed to append record: ${error instanceof Error ? error.message : String(error)}`);
+    }
+
+    return true;
+  }
+
   private async pickCommand(): Promise<CliCommandNode | undefined> {
     if (this.provider.getEntries().length === 0) {
       await this.provider.refresh();
@@ -259,6 +321,12 @@ export class CliModule {
       qualityGate
     };
   }
+}
+
+function pathBaseName(filePath: string): string {
+  const normalized = filePath.replace(/\\/g, '/');
+  const parts = normalized.split('/');
+  return parts[parts.length - 1] ?? filePath;
 }
 
 function notifyProcess(result: { exitCode: number; cancelled: boolean }): void {

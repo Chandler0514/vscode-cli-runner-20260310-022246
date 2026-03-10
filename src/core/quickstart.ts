@@ -199,7 +199,18 @@ function buildModel(): QuickstartModel {
         { label: 'Run Automotive Pipeline', command: 'cliRunner.runAutomotivePipeline', primary: true },
         { label: 'Run Variant Matrix', command: 'cliRunner.runVariantMatrix' },
         { label: 'Open Audit Log', command: 'cliRunner.openAuditLog' },
+        { label: 'Check For Updates', command: 'cliRunner.checkForUpdates' },
         { label: 'Open Quickstart Again', command: 'cliRunner.openQuickstart' }
+      ]
+    },
+    {
+      title: 'Step 5 - Interop Playground',
+      intent: 'Connect CLI Runner with other extensions or expose your own integration layer.',
+      actions: [
+        { label: 'Open Interop Playground', command: 'cliRunner.openInteropPlayground', primary: true },
+        { label: 'List Interop Tool Actions', command: 'cliRunner.interop.listToolActions' },
+        { label: 'List Interop REST Actions', command: 'cliRunner.interop.listRestActions' },
+        { label: 'Get Interop Capabilities', command: 'cliRunner.interop.getCapabilities' }
       ]
     }
   ];
@@ -224,7 +235,7 @@ function buildHtml(model: QuickstartModel, firstRun: boolean): string {
     <li class="check-row ${item.ok ? 'ok' : 'todo'}">
       <div>
         <div class="label">${escapeHtml(item.label)}</div>
-        <div class="meta">${item.required ? 'Required' : 'Optional'} · ${escapeHtml(item.hint)}</div>
+        <div class="meta">${item.required ? 'Required' : 'Optional'} - ${escapeHtml(item.hint)}</div>
       </div>
       <div class="right">
         <span class="state">${item.ok ? 'OK' : 'TODO'}</span>
@@ -387,7 +398,7 @@ function buildHtml(model: QuickstartModel, firstRun: boolean): string {
   <section class="hero">
     <h1>${escapeHtml(heading)}</h1>
     <p>${escapeHtml(intro)}</p>
-    <div class="meta">Workspace: ${escapeHtml(model.workspaceName)} · Required checks: ${requiredDone}/${requiredTotal}</div>
+    <div class="meta">Workspace: ${escapeHtml(model.workspaceName)} - Required checks: ${requiredDone}/${requiredTotal}</div>
     ${nextAction}
   </section>
 

@@ -283,3 +283,79 @@ View toolbar icon migration:
 
 - Commands in `view/title` now use icon contributions from `resources/icons/{light,dark}`.
 - This keeps actions compact while retaining intent via command tooltip/title.
+
+## 9. Windows Encoding And Update Checks
+
+### 9.1 Windows Chinese Output Compatibility
+
+Process output decoding now supports Windows-specific encoding selection:
+
+- setting: `cliRunner.windowsOutputEncoding`
+- values: `auto` / `utf8` / `gb18030`
+- implementation: `src/core/exec.ts`
+
+Notes:
+
+- `auto` chooses `gb18030` for Chinese UI locale and `utf8` otherwise.
+- `.cmd/.bat` invocation now uses command-line quoting for better path compatibility (including spaces/CJK).
+
+### 9.2 Auto Update Check + Confirmation Entry
+
+Update checking implementation:
+
+- core file: `src/core/updateChecker.ts`
+- command: `cliRunner.checkForUpdates`
+- startup hook: `activate` in `src/extension.ts`
+- toolbar entry: `view/title` menu icon button
+
+Update check settings:
+
+- `cliRunner.updateCheckEnabled`
+- `cliRunner.updateCheckIntervalHours`
+- `cliRunner.updateFeedUrl`
+
+## 10. Plugin Interop API
+
+CLI Runner now supports extension-to-extension interoperability in both directions:
+
+1. Other extensions can call CLI Runner APIs.
+2. CLI Runner can call other extension APIs through a bridge call.
+
+Core files:
+
+- `src/core/interopApi.ts` (public API contracts)
+- `src/core/interopHub.ts` (runtime implementation and command protocol)
+- `src/extension.ts` (`activate` returns API object)
+- `cliRunner.openInteropPlayground` (visual integration helper)
+
+Public API highlights:
+
+- `getCapabilities()`
+- `listToolActions()` / `listRestActions()`
+- `runToolActionById()` / `runRestActionById()`
+- `runCliCommandByRef()`
+- `executeProcess()` / `executeRest()`
+- `registerToolDefinitions()` / `registerRestActions()`
+- `callExtensionApi()`
+- `onDidRun(...)`
+
+Command protocol (`cliRunner.interop.*`):
+
+- `getCapabilities`
+- `listToolActions`
+- `listRestActions`
+- `runToolActionById`
+- `runRestActionById`
+- `executeProcess`
+- `executeRest`
+- `callExtensionApi`
+- `registerToolDefinitions`
+- `registerRestActions`
+- `unregister`
+
+Dynamic extension points:
+
+- Tool wrappers: `ToolModule.registerExternalToolDefs(...)`
+- REST services: `RestModule.registerExternalActions(...)`
+
+External actions are merged into tree views and removable via returned disposable.

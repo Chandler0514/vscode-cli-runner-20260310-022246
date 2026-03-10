@@ -23,6 +23,8 @@ export function readIntegrationConfig(): IntegrationConfig {
     almRestToken: (config.get<string>('almRestToken', '') ?? '').trim(),
     restTimeoutMs: config.get<number>('restTimeoutMs', 15000) ?? 15000,
     restExtraHeaders: normalizeStringMap(config.get<unknown>('restExtraHeaders', {})),
+    windowsOutputEncoding: readWindowsOutputEncoding(config),
+    update: readUpdateConfig(config),
     automotive
   };
 }
@@ -73,6 +75,23 @@ function readAutomotiveConfig(config: vscode.WorkspaceConfiguration): Automotive
     qualityGateMaxErrors: normalizeNonNegativeNumber(config.get<number>('qualityGateMaxErrors', 0), 0),
     auditLogFile: (config.get<string>('auditLogFile', '.cli-runner/audit-log.jsonl') ?? '.cli-runner/audit-log.jsonl').trim() || '.cli-runner/audit-log.jsonl',
     enableDiagnostics: config.get<boolean>('enableDiagnostics', true) ?? true
+  };
+}
+
+function readWindowsOutputEncoding(config: vscode.WorkspaceConfiguration): 'auto' | 'utf8' | 'gb18030' {
+  const value = (config.get<string>('windowsOutputEncoding', 'auto') ?? 'auto').trim().toLowerCase();
+  if (value === 'utf8' || value === 'gb18030') {
+    return value;
+  }
+  return 'auto';
+}
+
+function readUpdateConfig(config: vscode.WorkspaceConfiguration): IntegrationConfig['update'] {
+  const intervalHours = config.get<number>('updateCheckIntervalHours', 24) ?? 24;
+  return {
+    enabled: config.get<boolean>('updateCheckEnabled', true) ?? true,
+    intervalHours: Number.isFinite(intervalHours) && intervalHours > 0 ? intervalHours : 24,
+    feedUrl: (config.get<string>('updateFeedUrl', 'https://api.github.com/repos/Chandler0514/vscode-cli-runner-20260310-022246/releases/latest') ?? 'https://api.github.com/repos/Chandler0514/vscode-cli-runner-20260310-022246/releases/latest').trim()
   };
 }
 

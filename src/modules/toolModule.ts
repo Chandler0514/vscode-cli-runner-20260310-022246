@@ -483,12 +483,16 @@ class ToolProvider implements vscode.TreeDataProvider<ToolTreeNode> {
   private readonly emitter = new vscode.EventEmitter<ToolTreeNode | void>();
   public readonly onDidChangeTreeData = this.emitter.event;
 
+  public constructor(
+    private readonly getToolDefs: () => readonly ToolDef[]
+  ) {}
+
   public refresh(): void {
     this.emitter.fire();
   }
 
   public getAllActionNodes(): ToolActionNode[] {
-    return TOOL_DEFS.flatMap((tool) => tool.actions.map((action) => new ToolActionNode(tool, action)));
+    return this.getToolDefs().flatMap((tool) => tool.actions.map((action) => new ToolActionNode(tool, action)));
   }
 
   public getTreeItem(element: ToolTreeNode): vscode.TreeItem {
@@ -503,7 +507,7 @@ class ToolProvider implements vscode.TreeDataProvider<ToolTreeNode> {
       return [new ToolDomainNode('SCM'), new ToolDomainNode('ALM'), new ToolDomainNode('Embedded')];
     }
     if (element instanceof ToolDomainNode) {
-      return TOOL_DEFS.filter((tool) => tool.domain === element.domain).map((tool) => new ToolNode(tool));
+      return this.getToolDefs().filter((tool) => tool.domain === element.domain).map((tool) => new ToolNode(tool));
     }
     if (element instanceof ToolNode) {
       return element.tool.actions.map((action) => new ToolActionNode(element.tool, action));
@@ -530,7 +534,8 @@ interface PipelineRunSummary {
 }
 
 export class ToolModule {
-  private readonly provider = new ToolProvider();
+  private readonly externalToolDefs: ToolDef[] = [];
+  private readonly provider = new ToolProvider(() => this.getToolDefs());
   private readonly diagnostics = vscode.languages.createDiagnosticCollection('cliRunner.tools');
 
   public constructor(
@@ -577,6 +582,63 @@ export class ToolModule {
     this.provider.refresh();
   }
 
+  public listActionSummaries(): Array<{
+    readonly id: string;
+    readonly label: string;
+    readonly description: string;
+    readonly kind: ToolAction['kind'];
+    readonly domain: ToolDomain;
+    readonly toolId: string;
+    readonly toolLabel: string;
+    readonly source: 'builtin' | 'external';
+  }> {
+    const builtinToolIds = new Set(TOOL_DEFS.map((item) => item.id));
+    return this.getToolDefs().flatMap((tool) => tool.actions.map((action) => ({
+      id: action.id,
+      label: action.label,
+      description: action.description,
+      kind: action.kind,
+      domain: tool.domain,
+      toolId: tool.id,
+      toolLabel: tool.label,
+      source: builtinToolIds.has(tool.id) ? 'builtin' as const : 'external' as const
+    })));
+  }
+
+  public async runActionById(actionId: string): Promise<boolean> {
+    const found = this.findActionById(actionId);
+    if (!found) {
+      return false;
+    }
+    await this.runAction(new ToolActionNode(found.tool, found.action));
+    return true;
+  }
+
+  public registerExternalToolDefs(defs: readonly ToolDef[]): vscode.Disposable {
+    const addedIds: string[] = [];
+    defs.forEach((candidate) => {
+      if (this.getToolDefs().some((item) => item.id === candidate.id)) {
+        this.output.appendLine(`[interop] Skip external tool def "${candidate.id}" because id already exists.`);
+        return;
+      }
+      this.externalToolDefs.push(cloneToolDef(candidate));
+      addedIds.push(candidate.id);
+    });
+    if (addedIds.length > 0) {
+      this.refresh();
+    }
+
+    return new vscode.Disposable(() => {
+      if (addedIds.length === 0) {
+        return;
+      }
+      const set = new Set(addedIds);
+      const remaining = this.externalToolDefs.filter((item) => !set.has(item.id));
+      this.externalToolDefs.splice(0, this.externalToolDefs.length, ...remaining);
+      this.refresh();
+    });
+  }
+
   private async pickAction(): Promise<ToolActionNode | undefined> {
     const nodes = this.provider.getAllActionNodes();
     const picked = await vscode.window.showQuickPick(
@@ -600,6 +662,20 @@ export class ToolModule {
       return;
     }
     await this.runCliAction(node);
+  }
+
+  private getToolDefs(): readonly ToolDef[] {
+    return [...TOOL_DEFS, ...this.externalToolDefs];
+  }
+
+  private findActionById(actionId: string): { readonly tool: ToolDef; readonly action: ToolAction } | undefined {
+    for (const tool of this.getToolDefs()) {
+      const action = tool.actions.find((candidate) => candidate.id === actionId);
+      if (action) {
+        return { tool, action };
+      }
+    }
+    return undefined;
   }
 
   private async runCliAction(node: ToolActionNode): Promise<void> {
@@ -1140,6 +1216,18 @@ function toRestAction(action: ToolAction, group: string): RestAction {
     requiresSelection: action.requiresSelection,
     restTarget: action.restTarget,
     requiredEnvVars: action.requiredEnvVars
+  };
+}
+
+function cloneToolDef(input: ToolDef): ToolDef {
+  return {
+    ...input,
+    actions: input.actions.map((action) => ({
+      ...action,
+      argsTemplate: action.argsTemplate ? [...action.argsTemplate] : undefined,
+      requiredEnvVars: action.requiredEnvVars ? [...action.requiredEnvVars] : undefined,
+      prompt: action.prompt ? { ...action.prompt } : undefined
+    }))
   };
 }
 

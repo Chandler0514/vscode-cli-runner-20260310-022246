@@ -209,6 +209,7 @@ Open this folder in VS Code and press `F5` to launch Extension Development Host.
 ## Maintenance
 
 For maintainers, see [docs/MAINTENANCE.md](docs/MAINTENANCE.md).
+Interop details: [docs/INTEROP_API.md](docs/INTEROP_API.md).
 
 It includes:
 

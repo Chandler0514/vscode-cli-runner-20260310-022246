@@ -1,4 +1,6 @@
 import * as vscode from 'vscode';
+import { appendAuditRecord } from '../core/audit';
+import { findMissingEnvVars, getScenarioValues, mergeValueSources } from '../core/automotive';
 import { readIntegrationConfig } from '../core/config';
 import { buildRuntimeContext, applyTemplate } from '../core/context';
 import { runRestWithProgress } from '../core/exec';
@@ -50,6 +52,61 @@ const REST_ACTIONS: RestAction[] = [
     method: 'GET',
     endpointTemplate: '/projects/${workspaceName}/builds/latest',
     restTarget: 'resource'
+  },
+  {
+    id: 'rest.ci.latest',
+    group: 'CI and Validation',
+    label: 'Fetch Latest CI Pipeline',
+    description: 'Get latest CI pipeline run for active scenario',
+    method: 'GET',
+    endpointTemplate: '/ci/projects/${project}/pipelines/latest?ecu=${ecu}&board=${board}',
+    restTarget: 'resource'
+  },
+  {
+    id: 'rest.coverage.latest',
+    group: 'CI and Validation',
+    label: 'Fetch Coverage Summary',
+    description: 'Get unit test coverage summary',
+    method: 'GET',
+    endpointTemplate: '/ci/projects/${project}/coverage/latest?variant=${scenarioName}',
+    restTarget: 'resource'
+  },
+  {
+    id: 'rest.hil.latest',
+    group: 'CI and Validation',
+    label: 'Fetch HIL/SIL Result',
+    description: 'Get latest hardware/simulation test status',
+    method: 'GET',
+    endpointTemplate: '/validation/projects/${project}/latest?ecu=${ecu}',
+    restTarget: 'resource'
+  },
+  {
+    id: 'rest.trace.requirement',
+    group: 'Traceability',
+    label: 'Trace Requirement Link',
+    description: 'Requirement -> commits/tests/build links',
+    method: 'GET',
+    endpointTemplate: '/trace/requirements/${requirementId}',
+    prompt: {
+      variable: 'requirementId',
+      title: 'Requirement ID',
+      prompt: 'Enter requirement ID'
+    },
+    restTarget: 'alm'
+  },
+  {
+    id: 'rest.trace.workitem',
+    group: 'Traceability',
+    label: 'Trace Work Item Link',
+    description: 'Work item -> commits/tests/build links',
+    method: 'GET',
+    endpointTemplate: '/trace/work-items/${workItemId}',
+    prompt: {
+      variable: 'workItemId',
+      title: 'Work Item ID',
+      prompt: 'Enter work item ID'
+    },
+    restTarget: 'alm'
   }
 ];
 
@@ -150,10 +207,13 @@ export class RestModule {
   }
 
   private async runAction(action: RestAction): Promise<void> {
+    const integration = readIntegrationConfig();
+    const scenarioValues = getScenarioValues(integration.automotive);
     const runtime = await buildRuntimeContext({
       prompt: action.prompt,
       requiresActiveFile: action.requiresActiveFile,
-      requiresSelection: action.requiresSelection
+      requiresSelection: action.requiresSelection,
+      additionalValues: scenarioValues
     });
     if (!runtime) {
       return;
@@ -163,18 +223,27 @@ export class RestModule {
       return;
     }
 
-    const config = readIntegrationConfig();
+    const missingEnv = findMissingEnvVars([
+      ...integration.automotive.preflightRequiredEnvVars,
+      ...(action.requiredEnvVars ?? [])
+    ]);
+    if (missingEnv.length > 0) {
+      vscode.window.showWarningMessage(`Preflight failed. Missing env: ${missingEnv.join(', ')}`);
+      return;
+    }
+
+    const values = mergeValueSources(runtime.values, scenarioValues);
     const target = action.restTarget ?? 'resource';
-    const baseUrl = target === 'alm' ? config.almRestBaseUrl : config.restBaseUrl;
-    const token = target === 'alm' ? config.almRestToken : config.restToken;
+    const baseUrl = target === 'alm' ? integration.almRestBaseUrl : integration.restBaseUrl;
+    const token = target === 'alm' ? integration.almRestToken : integration.restToken;
     if (!baseUrl) {
       vscode.window.showWarningMessage(`Set ${target === 'alm' ? 'cliRunner.almRestBaseUrl' : 'cliRunner.restBaseUrl'} first.`);
       return;
     }
 
-    const endpoint = applyTemplate(action.endpointTemplate, runtime.values);
+    const endpoint = applyTemplate(action.endpointTemplate, values);
     const url = /^https?:\/\//i.test(endpoint) ? endpoint : `${baseUrl.replace(/\/+$/, '')}/${endpoint.replace(/^\/+/, '')}`;
-    const headers: Record<string, string> = { Accept: 'application/json', ...config.restExtraHeaders };
+    const headers: Record<string, string> = { Accept: 'application/json', ...integration.restExtraHeaders };
     if (token && !Object.keys(headers).some((key) => key.toLowerCase() === 'authorization')) {
       headers.Authorization = `Bearer ${token}`;
     }
@@ -184,12 +253,35 @@ export class RestModule {
       method: action.method,
       url,
       headers,
-      timeoutMs: config.restTimeoutMs,
+      timeoutMs: integration.restTimeoutMs,
       output: this.output
     });
 
     this.presenter.showRest(model);
     notifyRest(model.result);
+
+    await this.safeAudit(runtime.workspacePath, integration.automotive.auditLogFile, {
+      timestamp: new Date().toISOString(),
+      kind: 'rest',
+      title: `REST Services: ${action.label}`,
+      scenarioName: scenarioValues.scenarioName,
+      success: !model.result.cancelled && model.result.ok,
+      durationMs: model.result.durationMs,
+      status: model.result.status,
+      detail: `${action.method} ${url}`
+    });
+  }
+
+  private async safeAudit(
+    workspacePath: string,
+    auditLogFile: string,
+    record: Parameters<typeof appendAuditRecord>[2]
+  ): Promise<void> {
+    try {
+      await appendAuditRecord(workspacePath, auditLogFile, record);
+    } catch (error) {
+      this.output.appendLine(`[audit] Failed to append record: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 }
 

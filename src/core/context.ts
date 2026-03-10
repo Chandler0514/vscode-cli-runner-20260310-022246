@@ -6,6 +6,7 @@ export async function buildRuntimeContext(options: {
   readonly prompt?: ActionPrompt;
   readonly requiresActiveFile?: boolean;
   readonly requiresSelection?: boolean;
+  readonly additionalValues?: Record<string, string>;
 } = {}): Promise<RuntimeContext | undefined> {
   const workspace = vscode.workspace.workspaceFolders?.[0];
   const editor = vscode.window.activeTextEditor;
@@ -54,6 +55,17 @@ export async function buildRuntimeContext(options: {
     input,
     inputEncoded: encodeURIComponent(input)
   };
+
+  if (options.additionalValues) {
+    Object.entries(options.additionalValues).forEach(([key, value]) => {
+      const safe = value ?? '';
+      values[key] = safe;
+      const encodedKey = `${key}Encoded`;
+      if (!(encodedKey in values)) {
+        values[encodedKey] = encodeURIComponent(safe);
+      }
+    });
+  }
 
   if (options.prompt) {
     values[options.prompt.variable] = input;

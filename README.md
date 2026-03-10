@@ -65,6 +65,57 @@ Execution experience:
 - `cliRunner.restToken` / `cliRunner.almRestToken`: auth tokens.
 - `cliRunner.restTimeoutMs`: REST timeout.
 - `cliRunner.restExtraHeaders`: extra REST headers.
+- `cliRunner.activeScenario`: active automotive scenario key.
+- `cliRunner.scenarios`: scenario map (`project/ecu/board/toolchain/buildType/...`).
+- `cliRunner.variantMatrix`: variant map for matrix workflow.
+- `cliRunner.pipelineSteps`: one-click pipeline step definitions.
+- `cliRunner.preflightRequiredEnvVars`: global env preflight checks.
+- `cliRunner.qualityGateMaxWarnings` / `cliRunner.qualityGateMaxErrors`: diagnostic quality gate thresholds.
+- `cliRunner.enableDiagnostics`: publish parsed compiler diagnostics to Problems.
+- `cliRunner.auditLogFile`: execution audit JSONL path.
+
+## Automotive Quick Start (Embedded C)
+
+```json
+{
+  "cliRunner.activeScenario": "BodyCtrl-Debug",
+  "cliRunner.scenarios": {
+    "BodyCtrl-Debug": {
+      "project": "BodyCtrl",
+      "ecu": "BCM",
+      "board": "TC397",
+      "toolchain": "cmake",
+      "buildType": "Debug",
+      "mcu": "TC397",
+      "debugInterface": "jlink"
+    }
+  },
+  "cliRunner.variantMatrix": {
+    "Debug-TC397": {
+      "variantName": "Debug-TC397",
+      "buildType": "Debug",
+      "board": "TC397"
+    },
+    "Release-TC397": {
+      "variantName": "Release-TC397",
+      "buildType": "Release",
+      "board": "TC397"
+    }
+  },
+  "cliRunner.preflightRequiredEnvVars": [
+    "ARM_GCC_ROOT"
+  ],
+  "cliRunner.qualityGateMaxWarnings": 20,
+  "cliRunner.qualityGateMaxErrors": 0
+}
+```
+
+Then run in `Tool Wrappers`:
+
+1. `Automotive Workflows -> Select Active Scenario`
+2. `Automotive Workflows -> Run One-click Pipeline`
+3. `Automotive Workflows -> Run Variant Matrix`
+4. `Automotive Workflows -> Analyze .map Size`
 
 ## Commands
 
@@ -74,6 +125,9 @@ Execution experience:
 - `CLI Runner: Run Command`
 - `CLI Runner: Run Tool Wrapper Action`
 - `CLI Runner: Run REST Resource Action`
+- `CLI Runner: Set Active Scenario`
+- `CLI Runner: Run Automotive Pipeline`
+- `CLI Runner: Run Variant Matrix`
 
 ## Development
 
@@ -84,6 +138,18 @@ npm run package:vsix
 ```
 
 Open this folder in VS Code and press `F5` to launch Extension Development Host.
+
+## Maintenance
+
+For maintainers, see [docs/MAINTENANCE.md](docs/MAINTENANCE.md).
+
+It includes:
+
+- architecture and runtime flow
+- extension guide for the three main modules (`CLI Commands`, `Tool Wrappers`, `REST Services`)
+- external command interface requirements (help output format, exit code, stdout/stderr, Windows script behavior)
+- configuration/package contribution sync checklist
+- quick manual regression checklist with `mock-workspace/tools/cli-runner-test.cmd`
 
 ## Automated Distribution (GitHub Actions)
 

@@ -1,9 +1,12 @@
 import * as vscode from 'vscode';
-import { readCliConfig } from '../core/config';
+import { appendAuditRecord } from '../core/audit';
+import { evaluateQualityGate, getScenarioValues } from '../core/automotive';
+import { readCliConfig, readIntegrationConfig } from '../core/config';
 import { buildExecutableEntry, discoverExecutables, splitArgs } from '../core/cliDiscovery';
+import { parseDiagnostics, publishDiagnostics } from '../core/diagnostics';
 import { runProcessWithProgress } from '../core/exec';
 import { ResultPresenter } from '../core/resultPresenter';
-import { ExecutableEntry, ParsedCliCommand } from '../core/types';
+import { IntegrationConfig, ExecutableEntry, ParsedCliCommand, ProcessRunViewModel } from '../core/types';
 import { InfoNode } from '../core/treeNodes';
 
 type CliTreeNode = InfoNode | ExecutableNode | CliCommandNode;
@@ -116,6 +119,7 @@ class CliProvider implements vscode.TreeDataProvider<CliTreeNode> {
 
 export class CliModule {
   private readonly provider = new CliProvider();
+  private readonly diagnostics = vscode.languages.createDiagnosticCollection('cliRunner.cli');
 
   public constructor(
     private readonly output: vscode.OutputChannel,
@@ -123,6 +127,7 @@ export class CliModule {
   ) {}
 
   public register(context: vscode.ExtensionContext): void {
+    context.subscriptions.push(this.diagnostics);
     context.subscriptions.push(
       vscode.window.registerTreeDataProvider('cliRunner.modules.commands', this.provider)
     );
@@ -203,7 +208,10 @@ export class CliModule {
       return;
     }
 
-    const model = await runProcessWithProgress({
+    const integration = readIntegrationConfig();
+    const scenario = getScenarioValues(integration.automotive);
+
+    const baseModel = await runProcessWithProgress({
       title: `${node.entry.name} ${node.commandDef.command}`.trim(),
       executable: node.entry.path,
       args: splitArgs(node.commandDef.command),
@@ -211,8 +219,45 @@ export class CliModule {
       output: this.output
     });
 
+    const model = this.enrichModel(baseModel, workspace.uri.fsPath, integration);
     this.presenter.showProcess(model);
     notifyProcess(model.result);
+
+    try {
+      await appendAuditRecord(workspace.uri.fsPath, integration.automotive.auditLogFile, {
+        timestamp: new Date().toISOString(),
+        kind: 'process',
+        title: model.title,
+        scenarioName: scenario.scenarioName,
+        success: !model.result.cancelled && model.result.exitCode === 0,
+        durationMs: model.result.durationMs,
+        exitCode: model.result.exitCode,
+        detail: model.displayCommand
+      });
+    } catch (error) {
+      this.output.appendLine(`[audit] Failed to append record: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  private enrichModel(
+    model: ProcessRunViewModel,
+    workspacePath: string,
+    integration: IntegrationConfig
+  ): ProcessRunViewModel {
+    if (!integration.automotive.enableDiagnostics) {
+      this.diagnostics.clear();
+      return model;
+    }
+
+    const diagnostics = parseDiagnostics(model.lines, workspacePath);
+    const summary = publishDiagnostics(this.diagnostics, diagnostics);
+    const qualityGate = evaluateQualityGate(summary, integration.automotive);
+
+    return {
+      ...model,
+      diagnosticSummary: summary,
+      qualityGate
+    };
   }
 }
 

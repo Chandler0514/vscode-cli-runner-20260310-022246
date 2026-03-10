@@ -26,6 +26,21 @@ export class ResultPresenter {
     this.panel.reveal(vscode.ViewColumn.Beside, true);
   }
 
+  public showReport(options: {
+    readonly title: string;
+    readonly summary: string[];
+    readonly sections: Array<{ readonly title: string; readonly body: string }>;
+  }): void {
+    this.ensurePanel();
+    if (!this.panel) {
+      return;
+    }
+
+    this.panel.title = `Result: ${options.title}`;
+    this.panel.webview.html = this.buildReportHtml(options.title, options.summary, options.sections);
+    this.panel.reveal(vscode.ViewColumn.Beside, true);
+  }
+
   private ensurePanel(): void {
     if (this.panel) {
       return;
@@ -63,6 +78,12 @@ export class ResultPresenter {
       : '<li class="muted"><code>No obvious key line found. Check full output below.</code></li>';
 
     const fullOutput = model.lines.map((line) => `[${line.stream}] ${line.text}`).join('\n');
+    const diagnosticsSummary = model.diagnosticSummary
+      ? `<div class="meta">Diagnostics: <strong>${model.diagnosticSummary.errorCount} error(s), ${model.diagnosticSummary.warningCount} warning(s), ${model.diagnosticSummary.infoCount} info</strong></div>`
+      : '';
+    const qualityGate = model.qualityGate
+      ? `<div class="meta">Quality Gate: <strong>${model.qualityGate.passed ? 'PASSED' : 'FAILED'}</strong>${model.qualityGate.reason ? ` (${escapeHtml(model.qualityGate.reason)})` : ''}</div>`
+      : '';
 
     return `<!doctype html>
 <html lang="en">
@@ -79,6 +100,8 @@ ${sharedStyle()}
     <div class="meta">Exit code: <strong>${model.result.exitCode}</strong></div>
     <div class="meta">Duration: <strong>${model.result.durationMs} ms</strong></div>
     <div class="meta">Captured lines: <strong>${model.totalLines}</strong></div>
+    ${diagnosticsSummary}
+    ${qualityGate}
     <div class="meta">Command: <code>${escapeHtml(model.displayCommand)}</code></div>
   </div>
 
@@ -154,6 +177,39 @@ ${sharedStyle()}
       <pre>${escapeHtml(formatJson(result.body || '(No response body)'))}</pre>
     </details>
   </div>
+</body>
+</html>`;
+  }
+
+  private buildReportHtml(
+    title: string,
+    summary: readonly string[],
+    sections: ReadonlyArray<{ readonly title: string; readonly body: string }>
+  ): string {
+    const summaryRows = summary.length > 0
+      ? summary.map((line) => `<div class="meta">${escapeHtml(line)}</div>`).join('')
+      : '<div class="meta">No summary.</div>';
+
+    const sectionHtml = sections.map((section) => `
+  <div class="card">
+    <div class="title">${escapeHtml(section.title)}</div>
+    <pre>${escapeHtml(section.body || '(empty)')}</pre>
+  </div>`).join('');
+
+    return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>${escapeHtml(title)}</title>
+${sharedStyle()}
+</head>
+<body>
+  <div class="card">
+    <div class="title">${escapeHtml(title)}</div>
+    ${summaryRows}
+  </div>
+  ${sectionHtml || '<div class="card"><div class="title">Details</div><pre>(none)</pre></div>'}
 </body>
 </html>`;
   }

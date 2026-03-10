@@ -2,7 +2,7 @@
   "name": "cli-runner-sidebar",
   "displayName": "CLI Runner Sidebar",
   "description": "Find configured executables in the workspace, parse commands from -h, and run them from a sidebar.",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "publisher": "chandler-local",
   "engines": {
     "vscode": "^1.90.0"
@@ -19,7 +19,10 @@
     "onCommand:cliRunner.pickExecutable",
     "onCommand:cliRunner.runCommand",
     "onCommand:cliRunner.runToolAction",
-    "onCommand:cliRunner.runRestAction"
+    "onCommand:cliRunner.runRestAction",
+    "onCommand:cliRunner.setActiveScenario",
+    "onCommand:cliRunner.runAutomotivePipeline",
+    "onCommand:cliRunner.runVariantMatrix"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -72,6 +75,18 @@
       {
         "command": "cliRunner.runRestAction",
         "title": "CLI Runner: Run REST Resource Action"
+      },
+      {
+        "command": "cliRunner.setActiveScenario",
+        "title": "CLI Runner: Set Active Scenario"
+      },
+      {
+        "command": "cliRunner.runAutomotivePipeline",
+        "title": "CLI Runner: Run Automotive Pipeline"
+      },
+      {
+        "command": "cliRunner.runVariantMatrix",
+        "title": "CLI Runner: Run Variant Matrix"
       }
     ],
     "menus": {
@@ -90,6 +105,21 @@
           "command": "cliRunner.runToolAction",
           "when": "view == cliRunner.modules.tools",
           "group": "navigation@2"
+        },
+        {
+          "command": "cliRunner.setActiveScenario",
+          "when": "view == cliRunner.modules.tools",
+          "group": "navigation@3"
+        },
+        {
+          "command": "cliRunner.runAutomotivePipeline",
+          "when": "view == cliRunner.modules.tools",
+          "group": "navigation@4"
+        },
+        {
+          "command": "cliRunner.runVariantMatrix",
+          "when": "view == cliRunner.modules.tools",
+          "group": "navigation@5"
         },
         {
           "command": "cliRunner.runRestAction",
@@ -145,9 +175,19 @@
             "si": "si",
             "cleartool": "cleartool",
             "im": "im",
-            "cqcmd": "cqcmd"
+            "cqcmd": "cqcmd",
+            "cmake": "cmake",
+            "make": "make",
+            "iarbuild": "iarbuild",
+            "gbuild": "gbuild",
+            "ctc": "ctc",
+            "clang-tidy": "clang-tidy",
+            "cppcheck": "cppcheck",
+            "pclint": "pclint",
+            "openocd": "openocd",
+            "JLinkExe": "JLinkExe"
           },
-          "description": "Tool wrapper executable map. Keys: svn, si, cleartool, im, cqcmd.",
+          "description": "Tool wrapper executable map. Includes SCM/ALM and automotive toolchain keys.",
           "additionalProperties": {
             "type": "string"
           }
@@ -186,6 +226,105 @@
           "additionalProperties": {
             "type": "string"
           }
+        },
+        "cliRunner.activeScenario": {
+          "type": "string",
+          "default": "",
+          "description": "Active automotive scenario name used to inject template variables."
+        },
+        "cliRunner.scenarios": {
+          "type": "object",
+          "default": {},
+          "description": "Automotive scenarios map. Example: {\"BodyCtrl-Debug\": {\"project\":\"BodyCtrl\", \"ecu\":\"BCM\", \"board\":\"TC3xx\", \"toolchain\":\"cmake\", \"buildType\":\"Debug\"}}",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        },
+        "cliRunner.variantMatrix": {
+          "type": "object",
+          "default": {},
+          "description": "Variant matrix map. Each entry injects additional template values when running matrix workflow.",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        },
+        "cliRunner.pipelineSteps": {
+          "type": "array",
+          "default": [
+            {
+              "name": "Configure (CMake)",
+              "executableKey": "cmake",
+              "argsTemplate": [
+                "-S",
+                "${workspacePath}",
+                "-B",
+                "${workspacePath}/build/${variantName}",
+                "-DCMAKE_BUILD_TYPE=${buildType}"
+              ],
+              "continueOnError": false,
+              "requiredEnvVars": []
+            },
+            {
+              "name": "Build (CMake)",
+              "executableKey": "cmake",
+              "argsTemplate": [
+                "--build",
+                "${workspacePath}/build/${variantName}"
+              ],
+              "continueOnError": false,
+              "requiredEnvVars": []
+            },
+            {
+              "name": "Static Analysis (cppcheck)",
+              "executableKey": "cppcheck",
+              "argsTemplate": [
+                "--enable=warning,style,performance,portability",
+                "${workspacePath}"
+              ],
+              "continueOnError": true,
+              "requiredEnvVars": []
+            }
+          ],
+          "description": "Pipeline steps for one-click workflow. Each step supports template variables and per-step env preflight.",
+          "items": {
+            "type": "object"
+          }
+        },
+        "cliRunner.preflightRequiredEnvVars": {
+          "type": "array",
+          "default": [],
+          "description": "Global required environment variables checked before tool/pipeline/rest actions.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "cliRunner.qualityGateMaxWarnings": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "description": "Maximum allowed warning count in parsed diagnostics before quality gate fails."
+        },
+        "cliRunner.qualityGateMaxErrors": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "description": "Maximum allowed error count in parsed diagnostics before quality gate fails."
+        },
+        "cliRunner.enableDiagnostics": {
+          "type": "boolean",
+          "default": true,
+          "description": "Parse compiler logs and publish diagnostics into Problems panel."
+        },
+        "cliRunner.auditLogFile": {
+          "type": "string",
+          "default": ".cli-runner/audit-log.jsonl",
+          "description": "Relative or absolute path for JSONL execution audit log."
         }
       }
     }

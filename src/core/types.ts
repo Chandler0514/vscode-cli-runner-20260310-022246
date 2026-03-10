@@ -1,6 +1,13 @@
 export type StreamName = 'stdout' | 'stderr';
-export type ToolDomain = 'SCM' | 'ALM';
+export type ToolDomain = 'SCM' | 'ALM' | 'Embedded';
 export type RestTarget = 'resource' | 'alm';
+export type HttpMethod = 'GET' | 'POST';
+export type ToolActionKind = 'cli' | 'rest' | 'workflow';
+export type WorkflowActionId =
+  | 'automotive.selectScenario'
+  | 'automotive.runPipeline'
+  | 'automotive.runVariantMatrix'
+  | 'automotive.analyzeMap';
 
 export interface ParsedCliCommand {
   readonly command: string;
@@ -30,6 +37,7 @@ export interface IntegrationConfig {
   readonly almRestToken: string;
   readonly restTimeoutMs: number;
   readonly restExtraHeaders: Record<string, string>;
+  readonly automotive: AutomotiveConfig;
 }
 
 export interface ProcessResult {
@@ -52,6 +60,8 @@ export interface ProcessRunViewModel {
   readonly lines: CapturedLine[];
   readonly keyLines: CapturedLine[];
   readonly totalLines: number;
+  readonly diagnosticSummary?: DiagnosticSummary;
+  readonly qualityGate?: QualityGateResult;
 }
 
 export interface RestResult {
@@ -67,7 +77,7 @@ export interface RestResult {
 
 export interface RestRunViewModel {
   readonly title: string;
-  readonly method: 'GET' | 'POST';
+  readonly method: HttpMethod;
   readonly url: string;
   readonly requestHeaders: Record<string, string>;
   readonly requestBody?: string;
@@ -84,14 +94,17 @@ export interface ToolAction {
   readonly id: string;
   readonly label: string;
   readonly description: string;
-  readonly kind: 'cli' | 'rest';
+  readonly kind: ToolActionKind;
   readonly argsTemplate?: string[];
   readonly endpointTemplate?: string;
-  readonly method?: 'GET' | 'POST';
+  readonly method?: HttpMethod;
   readonly prompt?: ActionPrompt;
   readonly requiresActiveFile?: boolean;
   readonly requiresSelection?: boolean;
   readonly restTarget?: RestTarget;
+  readonly requiredEnvVars?: string[];
+  readonly workflowId?: WorkflowActionId;
+  readonly mapPathTemplate?: string;
 }
 
 export interface ToolDef {
@@ -108,12 +121,13 @@ export interface RestAction {
   readonly group: string;
   readonly label: string;
   readonly description: string;
-  readonly method: 'GET' | 'POST';
+  readonly method: HttpMethod;
   readonly endpointTemplate: string;
   readonly prompt?: ActionPrompt;
   readonly requiresActiveFile?: boolean;
   readonly requiresSelection?: boolean;
   readonly restTarget?: RestTarget;
+  readonly requiredEnvVars?: string[];
 }
 
 export interface RuntimeContext {
@@ -128,4 +142,48 @@ export interface RuntimeContext {
   readonly input: string;
   readonly inputEncoded: string;
   readonly values: Record<string, string>;
+}
+
+export interface AutomotivePipelineStep {
+  readonly name: string;
+  readonly executableKey: string;
+  readonly argsTemplate: string[];
+  readonly continueOnError: boolean;
+  readonly requiredEnvVars: string[];
+}
+
+export interface AutomotiveConfig {
+  readonly activeScenario: string;
+  readonly scenarios: Record<string, Record<string, string>>;
+  readonly variantMatrix: Record<string, Record<string, string>>;
+  readonly pipelineSteps: AutomotivePipelineStep[];
+  readonly preflightRequiredEnvVars: string[];
+  readonly qualityGateMaxWarnings: number;
+  readonly qualityGateMaxErrors: number;
+  readonly auditLogFile: string;
+  readonly enableDiagnostics: boolean;
+}
+
+export interface ParsedDiagnostic {
+  readonly filePath: string;
+  readonly line: number;
+  readonly column: number;
+  readonly severity: 'error' | 'warning' | 'info';
+  readonly source: string;
+  readonly message: string;
+}
+
+export interface DiagnosticSummary {
+  readonly errorCount: number;
+  readonly warningCount: number;
+  readonly infoCount: number;
+  readonly totalCount: number;
+}
+
+export interface QualityGateResult {
+  readonly passed: boolean;
+  readonly maxErrors: number;
+  readonly maxWarnings: number;
+  readonly summary: DiagnosticSummary;
+  readonly reason?: string;
 }

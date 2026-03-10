@@ -298,6 +298,7 @@ Notes:
 
 - `auto` chooses `gb18030` for Chinese UI locale and `utf8` otherwise.
 - `.cmd/.bat` invocation now uses command-line quoting for better path compatibility (including spaces/CJK).
+- `iconv-lite` decoding is optional-fallback; if dependency is unavailable, runtime falls back to UTF-8 without crashing activation.
 
 ### 9.2 Auto Update Check + Confirmation Entry
 

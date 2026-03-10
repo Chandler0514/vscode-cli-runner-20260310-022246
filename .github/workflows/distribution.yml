@@ -41,7 +41,7 @@ jobs:
 
       - name: Package VSIX
         run: |
-          npx @vscode/vsce package --no-dependencies
+          npx @vscode/vsce package
           VSIX_FILE="$(ls -1 *.vsix | head -n 1)"
           echo "VSIX_FILE=$VSIX_FILE" >> "$GITHUB_ENV"
           echo "Packaged: $VSIX_FILE"

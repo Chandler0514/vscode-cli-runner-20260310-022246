@@ -2,7 +2,6 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import { spawn } from 'child_process';
 import { StringDecoder } from 'string_decoder';
-import * as iconv from 'iconv-lite';
 import { readIntegrationConfig } from './config';
 import { CapturedLine, HttpMethod, ProcessResult, ProcessRunViewModel, RestResult, RestRunViewModel, StreamName } from './types';
 import { formatCommand } from './cliDiscovery';
@@ -264,11 +263,43 @@ function createOutputDecoder(encoding: 'utf8' | 'gb18030'): {
     };
   }
 
-  const decoder = iconv.getDecoder('gb18030');
+  const iconvDecoder = tryCreateGb18030Decoder();
+  if (!iconvDecoder) {
+    const fallback = new StringDecoder('utf8');
+    return {
+      write: (chunk) => fallback.write(chunk),
+      end: () => fallback.end()
+    };
+  }
+
   return {
-    write: (chunk) => decoder.write(chunk),
-    end: () => decoder.end() ?? ''
+    write: (chunk) => iconvDecoder.write(chunk),
+    end: () => iconvDecoder.end()
   };
+}
+
+function tryCreateGb18030Decoder():
+  | {
+      readonly write: (chunk: Buffer) => string;
+      readonly end: () => string;
+    }
+  | undefined {
+  try {
+    const maybeRequire = eval('require') as ((name: string) => unknown);
+    const iconv = maybeRequire('iconv-lite') as {
+      readonly getDecoder?: (encoding: string) => { readonly write: (chunk: Buffer) => string; readonly end: () => string | undefined };
+    };
+    const decoder = iconv.getDecoder?.('gb18030');
+    if (!decoder) {
+      return undefined;
+    }
+    return {
+      write: (chunk) => decoder.write(chunk),
+      end: () => decoder.end() ?? ''
+    };
+  } catch {
+    return undefined;
+  }
 }
 
 export async function executeRestRaw(

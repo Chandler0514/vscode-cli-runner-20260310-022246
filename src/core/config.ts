@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { AutomotiveConfig, AutomotivePipelineStep, CliRunnerConfig, IntegrationConfig } from './types';
+import { AutomotiveConfig, AutomotivePipelineStep, CliRunnerConfig, HilSilJob, IntegrationConfig } from './types';
 
 export function readCliConfig(): CliRunnerConfig {
   const config = vscode.workspace.getConfiguration('cliRunner');
@@ -74,7 +74,15 @@ function readAutomotiveConfig(config: vscode.WorkspaceConfiguration): Automotive
     qualityGateMaxWarnings: normalizeNonNegativeNumber(config.get<number>('qualityGateMaxWarnings', 0), 0),
     qualityGateMaxErrors: normalizeNonNegativeNumber(config.get<number>('qualityGateMaxErrors', 0), 0),
     auditLogFile: (config.get<string>('auditLogFile', '.cli-runner/audit-log.jsonl') ?? '.cli-runner/audit-log.jsonl').trim() || '.cli-runner/audit-log.jsonl',
-    enableDiagnostics: config.get<boolean>('enableDiagnostics', true) ?? true
+    enableDiagnostics: config.get<boolean>('enableDiagnostics', true) ?? true,
+    environmentDoctor: readEnvironmentDoctorConfig(config),
+    sizeRegression: readSizeRegressionConfig(config),
+    flashSmoke: readFlashSmokeConfig(config),
+    udsDiagnostics: readUdsDiagnosticsConfig(config),
+    dbcSearchRoots: toTrimmedStringArray(config.get<string[]>('dbcSearchRoots', ['dbc', 'network', '.'])),
+    hilSilJobs: normalizeHilSilJobs(config.get<unknown>('hilSilJobs', defaultHilSilJobs())),
+    traceability: readTraceabilityConfig(config),
+    postmortem: readPostmortemConfig(config)
   };
 }
 
@@ -152,9 +160,147 @@ function normalizePipelineSteps(input: unknown): AutomotivePipelineStep[] {
   return steps.length > 0 ? steps : defaultPipelineSteps();
 }
 
+function normalizeHilSilJobs(input: unknown): HilSilJob[] {
+  if (!Array.isArray(input)) {
+    return defaultHilSilJobs();
+  }
+
+  const jobs: HilSilJob[] = [];
+  input.forEach((item, index) => {
+    if (!item || typeof item !== 'object') {
+      return;
+    }
+    const source = item as Record<string, unknown>;
+    const name = typeof source.name === 'string' && source.name.trim().length > 0
+      ? source.name.trim()
+      : `Job ${index + 1}`;
+    const kind = source.kind === 'rest' ? 'rest' : 'cli';
+    const executableKey = typeof source.executableKey === 'string' ? source.executableKey.trim() : '';
+    const method = source.method === 'POST' ? 'POST' : 'GET';
+    const endpointTemplate = typeof source.endpointTemplate === 'string' && source.endpointTemplate.trim().length > 0
+      ? source.endpointTemplate.trim()
+      : '/';
+    const restTarget = source.restTarget === 'alm' ? 'alm' : 'resource';
+    const argsTemplate = Array.isArray(source.argsTemplate)
+      ? source.argsTemplate
+        .filter((value): value is string => typeof value === 'string')
+        .map((value) => value.trim())
+        .filter((value) => value.length > 0)
+      : [];
+
+    if (kind === 'cli' && executableKey.length === 0) {
+      return;
+    }
+
+    jobs.push({
+      name,
+      kind,
+      executableKey,
+      argsTemplate,
+      method,
+      endpointTemplate,
+      restTarget,
+      continueOnError: source.continueOnError === true,
+      requiredEnvVars: Array.isArray(source.requiredEnvVars)
+        ? source.requiredEnvVars
+          .filter((env): env is string => typeof env === 'string')
+          .map((env) => env.trim())
+          .filter((env) => env.length > 0)
+        : []
+    });
+  });
+
+  return jobs.length > 0 ? jobs : defaultHilSilJobs();
+}
+
+function readEnvironmentDoctorConfig(config: vscode.WorkspaceConfiguration): AutomotiveConfig['environmentDoctor'] {
+  return {
+    requiredEnvVars: toTrimmedStringArray(config.get<string[]>('environmentRequiredEnvVars', [])),
+    requiredFiles: toTrimmedStringArray(config.get<string[]>('environmentRequiredFiles', [])),
+    requiredExecutables: toTrimmedStringArray(config.get<string[]>('environmentRequiredExecutables', ['cmake', 'cppcheck', 'openocd', 'ctest']))
+  };
+}
+
+function readSizeRegressionConfig(config: vscode.WorkspaceConfiguration): AutomotiveConfig['sizeRegression'] {
+  return {
+    baselineMapPath: (config.get<string>('sizeBaselineMapPath', '') ?? '').trim(),
+    budgetTotalBytes: normalizeNonNegativeNumber(config.get<number>('sizeBudgetTotalBytes', 0), 0),
+    budgetTextBytes: normalizeNonNegativeNumber(config.get<number>('sizeBudgetTextBytes', 0), 0),
+    budgetDataBytes: normalizeNonNegativeNumber(config.get<number>('sizeBudgetDataBytes', 0), 0),
+    budgetBssBytes: normalizeNonNegativeNumber(config.get<number>('sizeBudgetBssBytes', 0), 0)
+  };
+}
+
+function readFlashSmokeConfig(config: vscode.WorkspaceConfiguration): AutomotiveConfig['flashSmoke'] {
+  return {
+    flashExecutableKey: (config.get<string>('flashToolKey', 'openocd') ?? 'openocd').trim() || 'openocd',
+    flashArgsTemplate: toTrimmedStringArray(config.get<string[]>('flashArgsTemplate', [
+      '-f',
+      'interface/${debugInterface}.cfg',
+      '-f',
+      'target/${mcu}.cfg',
+      '-c',
+      'program ${imagePath} verify reset exit'
+    ])),
+    smokeExecutableKey: (config.get<string>('smokeToolKey', 'ctest') ?? 'ctest').trim() || 'ctest',
+    smokeArgsTemplate: toTrimmedStringArray(config.get<string[]>('smokeArgsTemplate', [
+      '--test-dir',
+      '${workspacePath}/build/${scenarioName}',
+      '-L',
+      'smoke',
+      '--output-on-failure'
+    ]))
+  };
+}
+
+function readUdsDiagnosticsConfig(config: vscode.WorkspaceConfiguration): AutomotiveConfig['udsDiagnostics'] {
+  const transportRaw = (config.get<string>('udsTransport', 'rest') ?? 'rest').trim().toLowerCase();
+  return {
+    transport: transportRaw === 'cli' ? 'cli' : 'rest',
+    restBaseUrl: (config.get<string>('udsRestBaseUrl', '') ?? '').trim(),
+    restToken: (config.get<string>('udsRestToken', '') ?? '').trim(),
+    executableKey: (config.get<string>('udsExecutableKey', 'uds-cli') ?? 'uds-cli').trim() || 'uds-cli',
+    ecuAddress: (config.get<string>('udsDefaultEcuAddress', '0x7E0') ?? '0x7E0').trim() || '0x7E0',
+    readDtcEndpointTemplate: (config.get<string>('udsReadDtcEndpointTemplate', '/uds/${ecuAddress}/dtc') ?? '/uds/${ecuAddress}/dtc').trim() || '/uds/${ecuAddress}/dtc',
+    clearDtcEndpointTemplate: (config.get<string>('udsClearDtcEndpointTemplate', '/uds/${ecuAddress}/dtc/clear') ?? '/uds/${ecuAddress}/dtc/clear').trim() || '/uds/${ecuAddress}/dtc/clear',
+    readDidEndpointTemplate: (config.get<string>('udsReadDidEndpointTemplate', '/uds/${ecuAddress}/did/${did}') ?? '/uds/${ecuAddress}/did/${did}').trim() || '/uds/${ecuAddress}/did/${did}',
+    readDtcArgsTemplate: toTrimmedStringArray(config.get<string[]>('udsReadDtcArgsTemplate', ['read-dtc', '--ecu', '${ecuAddress}'])),
+    clearDtcArgsTemplate: toTrimmedStringArray(config.get<string[]>('udsClearDtcArgsTemplate', ['clear-dtc', '--ecu', '${ecuAddress}'])),
+    readDidArgsTemplate: toTrimmedStringArray(config.get<string[]>('udsReadDidArgsTemplate', ['read-did', '--ecu', '${ecuAddress}', '--did', '${did}']))
+  };
+}
+
+function readTraceabilityConfig(config: vscode.WorkspaceConfiguration): AutomotiveConfig['traceability'] {
+  return {
+    requirementPattern: (config.get<string>('requirementIdPattern', '[A-Z]{2,}-\\d+') ?? '[A-Z]{2,}-\\d+').trim() || '[A-Z]{2,}-\\d+',
+    lookbackCommits: normalizeRangeNumber(config.get<number>('traceabilityLookbackCommits', 120), 120, 20, 1000)
+  };
+}
+
+function readPostmortemConfig(config: vscode.WorkspaceConfiguration): AutomotiveConfig['postmortem'] {
+  return {
+    reportDir: (config.get<string>('postmortemReportDir', '.cli-runner/reports') ?? '.cli-runner/reports').trim() || '.cli-runner/reports',
+    logFiles: toTrimmedStringArray(config.get<string[]>('postmortemLogFiles', [])),
+    maxLogLines: normalizeRangeNumber(config.get<number>('postmortemMaxLogLines', 200), 200, 20, 2000)
+  };
+}
+
 function normalizeNonNegativeNumber(value: number | undefined, fallback: number): number {
   if (typeof value !== 'number' || Number.isNaN(value) || value < 0) {
     return fallback;
+  }
+  return value;
+}
+
+function normalizeRangeNumber(value: number | undefined, fallback: number, min: number, max: number): number {
+  if (typeof value !== 'number' || Number.isNaN(value)) {
+    return fallback;
+  }
+  if (value < min) {
+    return min;
+  }
+  if (value > max) {
+    return max;
   }
   return value;
 }
@@ -192,6 +338,39 @@ function defaultPipelineSteps(): AutomotivePipelineStep[] {
         '${workspacePath}'
       ],
       continueOnError: true,
+      requiredEnvVars: []
+    }
+  ];
+}
+
+function defaultHilSilJobs(): HilSilJob[] {
+  return [
+    {
+      name: 'HIL REST Health',
+      kind: 'rest',
+      executableKey: '',
+      argsTemplate: [],
+      method: 'GET',
+      endpointTemplate: '/validation/projects/${project}/latest?ecu=${ecu}',
+      restTarget: 'resource',
+      continueOnError: true,
+      requiredEnvVars: []
+    },
+    {
+      name: 'SIL Smoke (CTest)',
+      kind: 'cli',
+      executableKey: 'ctest',
+      argsTemplate: [
+        '--test-dir',
+        '${workspacePath}/build/${scenarioName}',
+        '-L',
+        'smoke',
+        '--output-on-failure'
+      ],
+      method: 'GET',
+      endpointTemplate: '/',
+      restTarget: 'resource',
+      continueOnError: false,
       requiredEnvVars: []
     }
   ];

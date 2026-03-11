@@ -97,6 +97,21 @@ const tools = api.listToolActions();
 await api.runToolActionById('automotive.pipeline');
 ```
 
+### 7) Automotive workflow center (embedded-focused)
+
+`Tool Wrappers -> Embedded -> Automotive Workflows` includes:
+
+- `Environment Doctor`: env/tool/file preflight checks.
+- `Quality Gate Dashboard`: audit trend + failure hotspots.
+- `Compare Size Regression`: baseline vs current map + budget checks.
+- `Flash + Smoke Test`: flashing and smoke validation in one run.
+- `UDS Diagnostics`: read/clear DTC and read DID (REST or CLI).
+- `DBC Signal Lookup`: query signal/message details from DBC files.
+- `Apply Pipeline Template`: seed standard automotive pipeline steps.
+- `Run HIL/SIL Orchestrator`: mixed REST/CLI validation job runner.
+- `Generate Traceability Report`: requirement/commit/test linkage report.
+- `Generate Postmortem Report`: incident report from audit/log evidence.
+
 ## Settings
 
 - `cliRunner.executableNames`: executable names or workspace-relative paths.
@@ -119,6 +134,14 @@ await api.runToolActionById('automotive.pipeline');
 - `cliRunner.qualityGateMaxWarnings` / `cliRunner.qualityGateMaxErrors`: diagnostic quality gate thresholds.
 - `cliRunner.enableDiagnostics`: publish parsed compiler diagnostics to Problems.
 - `cliRunner.auditLogFile`: execution audit JSONL path.
+- `cliRunner.environmentRequiredEnvVars` / `cliRunner.environmentRequiredFiles` / `cliRunner.environmentRequiredExecutables`: Environment Doctor checks.
+- `cliRunner.sizeBaselineMapPath` + `cliRunner.sizeBudget*Bytes`: map size regression baseline and budgets.
+- `cliRunner.flashToolKey` / `cliRunner.flashArgsTemplate` / `cliRunner.smokeToolKey` / `cliRunner.smokeArgsTemplate`: flash + smoke workflow settings.
+- `cliRunner.uds*`: UDS diagnostic transport, endpoint, and CLI template settings.
+- `cliRunner.dbcSearchRoots`: DBC lookup search roots.
+- `cliRunner.hilSilJobs`: HIL/SIL orchestrator jobs.
+- `cliRunner.requirementIdPattern` / `cliRunner.traceabilityLookbackCommits`: traceability report rules.
+- `cliRunner.postmortemReportDir` / `cliRunner.postmortemLogFiles` / `cliRunner.postmortemMaxLogLines`: postmortem report output and evidence collection.
 - `cliRunner.updateCheckEnabled`: enable startup update checks.
 - `cliRunner.updateCheckIntervalHours`: update check interval.
 - `cliRunner.updateFeedUrl`: update feed URL.
@@ -165,6 +188,10 @@ Then run in `Tool Wrappers`:
 2. `Automotive Workflows -> Run One-click Pipeline`
 3. `Automotive Workflows -> Run Variant Matrix`
 4. `Automotive Workflows -> Analyze .map Size`
+5. `Automotive Workflows -> Environment Doctor`
+6. `Automotive Workflows -> Flash + Smoke Test`
+7. `Automotive Workflows -> UDS Diagnostics`
+8. `Automotive Workflows -> Generate Traceability Report`
 
 Recommended analysis interfaces in `Tool Wrappers -> Embedded`:
 
@@ -210,6 +237,7 @@ Open this folder in VS Code and press `F5` to launch Extension Development Host.
 
 For maintainers, see [docs/MAINTENANCE.md](docs/MAINTENANCE.md).
 Interop details: [docs/INTEROP_API.md](docs/INTEROP_API.md).
+Automotive feature board: [docs/AUTOMOTIVE_FEATURES.md](docs/AUTOMOTIVE_FEATURES.md).
 
 It includes:
 

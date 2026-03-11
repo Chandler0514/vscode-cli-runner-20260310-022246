@@ -1,6 +1,8 @@
 import * as path from 'path';
+import { promises as fs } from 'fs';
 import * as vscode from 'vscode';
-import { appendAuditRecord } from '../core/audit';
+import { appendAuditRecord, AuditRecord } from '../core/audit';
+import { readAuditRecords } from '../core/auditReader';
 import {
   evaluateQualityGate,
   findMissingEnvVars,
@@ -13,11 +15,12 @@ import {
 import { readIntegrationConfig, setToolExecutable } from '../core/config';
 import { applyTemplate, buildRuntimeContext } from '../core/context';
 import { parseDiagnostics, publishDiagnostics } from '../core/diagnostics';
-import { runProcessWithProgress, runRestWithProgress } from '../core/exec';
+import { executeProcessRaw, runProcessWithProgress, runRestWithProgress } from '../core/exec';
 import { analyzeMapFile, formatBytes } from '../core/mapAnalysis';
 import { ResultPresenter } from '../core/resultPresenter';
-import { ProcessRunViewModel, RestAction, ToolAction, ToolDef, ToolDomain } from '../core/types';
+import { AutomotivePipelineStep, HilSilJob, ProcessRunViewModel, RestAction, ToolAction, ToolDef, ToolDomain } from '../core/types';
 import { InfoNode } from '../core/treeNodes';
+import { parseDbcSignals, readLastLines, scanWorkspaceFiles } from '../core/workspaceInsights';
 
 type ToolTreeNode = InfoNode | ToolDomainNode | ToolNode | ToolActionNode;
 
@@ -447,6 +450,76 @@ const TOOL_DEFS: ToolDef[] = [
         description: 'Analyze memory usage from linker map file',
         kind: 'workflow',
         workflowId: 'automotive.analyzeMap'
+      },
+      {
+        id: 'automotive.environmentDoctor',
+        label: 'Environment Doctor',
+        description: 'Check tooling/env/files readiness before build and flashing',
+        kind: 'workflow',
+        workflowId: 'automotive.environmentDoctor'
+      },
+      {
+        id: 'automotive.qualityDashboard',
+        label: 'Quality Gate Dashboard',
+        description: 'Show quality trend from recent audit and gate thresholds',
+        kind: 'workflow',
+        workflowId: 'automotive.qualityDashboard'
+      },
+      {
+        id: 'automotive.sizeRegression',
+        label: 'Compare Size Regression',
+        description: 'Compare current map file with baseline and budget limits',
+        kind: 'workflow',
+        workflowId: 'automotive.sizeRegression'
+      },
+      {
+        id: 'automotive.flashAndSmoke',
+        label: 'Flash + Smoke Test',
+        description: 'Program firmware then run smoke tests in one flow',
+        kind: 'workflow',
+        workflowId: 'automotive.flashAndSmoke'
+      },
+      {
+        id: 'automotive.udsDiagnostics',
+        label: 'UDS Diagnostics',
+        description: 'Run common UDS diagnostics (read/clear DTC, read DID)',
+        kind: 'workflow',
+        workflowId: 'automotive.udsDiagnostics'
+      },
+      {
+        id: 'automotive.dbcLookup',
+        label: 'DBC Signal Lookup',
+        description: 'Search DBC signals and inspect scaling and ranges',
+        kind: 'workflow',
+        workflowId: 'automotive.dbcLookup'
+      },
+      {
+        id: 'automotive.applyPipelineTemplate',
+        label: 'Apply Pipeline Template',
+        description: 'Apply a preset pipeline template for scenario workflows',
+        kind: 'workflow',
+        workflowId: 'automotive.applyPipelineTemplate'
+      },
+      {
+        id: 'automotive.runHilSil',
+        label: 'Run HIL/SIL Orchestrator',
+        description: 'Execute configured HIL/SIL validation jobs with summary',
+        kind: 'workflow',
+        workflowId: 'automotive.runHilSil'
+      },
+      {
+        id: 'automotive.traceabilityReport',
+        label: 'Generate Traceability Report',
+        description: 'Build requirement/commit/test traceability summary',
+        kind: 'workflow',
+        workflowId: 'automotive.traceabilityReport'
+      },
+      {
+        id: 'automotive.postmortemReport',
+        label: 'Generate Postmortem Report',
+        description: 'Collect diagnostics and logs into incident report',
+        kind: 'workflow',
+        workflowId: 'automotive.postmortemReport'
       }
     ]
   }
@@ -816,6 +889,36 @@ export class ToolModule {
       case 'automotive.analyzeMap':
         await this.runMapAnalysisWorkflow();
         return;
+      case 'automotive.environmentDoctor':
+        await this.runEnvironmentDoctorWorkflow();
+        return;
+      case 'automotive.qualityDashboard':
+        await this.runQualityDashboardWorkflow();
+        return;
+      case 'automotive.sizeRegression':
+        await this.runSizeRegressionWorkflow();
+        return;
+      case 'automotive.flashAndSmoke':
+        await this.runFlashAndSmokeWorkflow();
+        return;
+      case 'automotive.udsDiagnostics':
+        await this.runUdsDiagnosticsWorkflow();
+        return;
+      case 'automotive.dbcLookup':
+        await this.runDbcLookupWorkflow();
+        return;
+      case 'automotive.applyPipelineTemplate':
+        await this.runApplyPipelineTemplateWorkflow();
+        return;
+      case 'automotive.runHilSil':
+        await this.runHilSilWorkflow();
+        return;
+      case 'automotive.traceabilityReport':
+        await this.runTraceabilityReportWorkflow();
+        return;
+      case 'automotive.postmortemReport':
+        await this.runPostmortemWorkflow();
+        return;
       default:
         vscode.window.showWarningMessage('Workflow action is not implemented.');
     }
@@ -997,6 +1100,947 @@ export class ToolModule {
         success: false,
         detail: error instanceof Error ? error.message : String(error)
       });
+    }
+  }
+
+  private async runEnvironmentDoctorWorkflow(): Promise<void> {
+    const integration = readIntegrationConfig();
+    const runtime = await buildRuntimeContext();
+    if (!runtime || !runtime.workspacePath) {
+      vscode.window.showErrorMessage('Open a workspace folder first.');
+      return;
+    }
+
+    const envVars = Array.from(new Set([
+      ...integration.automotive.preflightRequiredEnvVars,
+      ...integration.automotive.environmentDoctor.requiredEnvVars
+    ])).sort((a, b) => a.localeCompare(b));
+    const missingEnvVars = findMissingEnvVars(envVars);
+    const envLines = envVars.length === 0
+      ? ['No environment variable check configured.']
+      : envVars.map((name) => `${missingEnvVars.includes(name) ? 'FAIL' : 'OK'} ${name}`);
+
+    const executableKeys = integration.automotive.environmentDoctor.requiredExecutables;
+    const executableLines: string[] = [];
+    for (const executableKey of executableKeys) {
+      const configured = integration.toolExecutables[executableKey] || executableKey;
+      const available = await isExecutableReachable(configured, runtime.workspacePath);
+      executableLines.push(`${available ? 'OK' : 'FAIL'} ${executableKey} -> ${configured}`);
+    }
+
+    const fileChecks = integration.automotive.environmentDoctor.requiredFiles;
+    const fileLines: string[] = [];
+    for (const candidate of fileChecks) {
+      const fullPath = path.isAbsolute(candidate) ? candidate : path.join(runtime.workspacePath, candidate);
+      const exists = await pathExists(fullPath);
+      fileLines.push(`${exists ? 'OK' : 'FAIL'} ${candidate}`);
+    }
+
+    const failedExecutables = executableLines.filter((line) => line.startsWith('FAIL')).length;
+    const failedFiles = fileLines.filter((line) => line.startsWith('FAIL')).length;
+    const passed = missingEnvVars.length === 0 && failedExecutables === 0 && failedFiles === 0;
+
+    this.presenter.showReport({
+      title: 'Environment Doctor',
+      summary: [
+        `Status: ${passed ? 'PASS' : 'FAIL'}`,
+        `Missing env vars: ${missingEnvVars.length}`,
+        `Missing executables: ${failedExecutables}`,
+        `Missing files: ${failedFiles}`,
+        `REST base URL: ${integration.restBaseUrl || '(not set)'}`,
+        `ALM base URL: ${integration.almRestBaseUrl || '(not set)'}`
+      ],
+      sections: [
+        { title: 'Environment Variables', body: envLines.join('\n') || '(none)' },
+        { title: 'Tool Executables', body: executableLines.join('\n') || '(none)' },
+        { title: 'Required Files', body: fileLines.join('\n') || '(none)' }
+      ]
+    });
+
+    await this.safeAudit(runtime.workspacePath, integration.automotive.auditLogFile, {
+      timestamp: new Date().toISOString(),
+      kind: 'workflow',
+      title: 'Environment Doctor',
+      scenarioName: integration.automotive.activeScenario,
+      success: passed,
+      detail: `missingEnv=${missingEnvVars.length}, missingExe=${failedExecutables}, missingFiles=${failedFiles}`
+    });
+  }
+
+  private async runQualityDashboardWorkflow(): Promise<void> {
+    const integration = readIntegrationConfig();
+    const runtime = await buildRuntimeContext();
+    if (!runtime || !runtime.workspacePath) {
+      vscode.window.showErrorMessage('Open a workspace folder first.');
+      return;
+    }
+
+    const records = await readAuditRecords(runtime.workspacePath, integration.automotive.auditLogFile, { limit: 300 });
+    const recent = records.slice(-60);
+    const successCount = recent.filter((record) => record.success).length;
+    const failCount = recent.length - successCount;
+    const avgDuration = recent.length > 0
+      ? Math.round(recent.reduce((sum, record) => sum + (record.durationMs ?? 0), 0) / recent.length)
+      : 0;
+
+    const failedTitles = new Map<string, number>();
+    recent
+      .filter((record) => !record.success)
+      .forEach((record) => {
+        failedTitles.set(record.title, (failedTitles.get(record.title) ?? 0) + 1);
+      });
+    const topFailures = Array.from(failedTitles.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 12)
+      .map(([title, count]) => `${count.toString().padStart(2, ' ')}x ${title}`);
+
+    const processRuns = recent.filter((record) => record.kind === 'process').length;
+    const restRuns = recent.filter((record) => record.kind === 'rest').length;
+    const workflowRuns = recent.filter((record) => record.kind === 'workflow').length;
+    const passRate = recent.length > 0 ? Math.round((successCount / recent.length) * 100) : 0;
+
+    this.presenter.showReport({
+      title: 'Quality Gate Dashboard',
+      summary: [
+        `Recent records: ${recent.length}`,
+        `Pass rate: ${passRate}% (${successCount}/${recent.length})`,
+        `Average duration: ${avgDuration} ms`,
+        `Kinds: process=${processRuns}, rest=${restRuns}, workflow=${workflowRuns}`,
+        `Thresholds: errors<=${integration.automotive.qualityGateMaxErrors}, warnings<=${integration.automotive.qualityGateMaxWarnings}`
+      ],
+      sections: [
+        {
+          title: 'Failure Hotspots',
+          body: topFailures.join('\n') || 'No failures in recent audit records.'
+        },
+        {
+          title: 'Recent Failures',
+          body: recent
+            .filter((record) => !record.success)
+            .slice(-20)
+            .map((record) => `${record.timestamp} | ${record.title} | ${record.detail ?? ''}`)
+            .join('\n') || 'No recent failures.'
+        }
+      ]
+    });
+
+    await this.safeAudit(runtime.workspacePath, integration.automotive.auditLogFile, {
+      timestamp: new Date().toISOString(),
+      kind: 'workflow',
+      title: 'Quality Gate Dashboard',
+      scenarioName: integration.automotive.activeScenario,
+      success: failCount === 0,
+      detail: `records=${recent.length}, pass=${successCount}, fail=${failCount}`
+    });
+  }
+
+  private async runSizeRegressionWorkflow(): Promise<void> {
+    const integration = readIntegrationConfig();
+    const scenarioValues = getScenarioValues(integration.automotive);
+    const runtime = await buildRuntimeContext({
+      additionalValues: scenarioValues
+    });
+    if (!runtime || !runtime.workspacePath) {
+      vscode.window.showErrorMessage('Open a workspace folder first.');
+      return;
+    }
+
+    const defaultCurrentMap = path.join(runtime.workspacePath, 'build', scenarioValues.scenarioName || 'default', 'app.map');
+    const currentInput = await vscode.window.showInputBox({
+      title: 'Current map file',
+      prompt: 'Enter current .map file path for regression compare',
+      value: defaultCurrentMap,
+      ignoreFocusOut: true,
+      validateInput: (value) => value.trim().length === 0 ? 'Current map file path is required.' : undefined
+    });
+    if (!currentInput) {
+      return;
+    }
+
+    const defaultBaseline = integration.automotive.sizeRegression.baselineMapPath || defaultCurrentMap;
+    const baselineInput = await vscode.window.showInputBox({
+      title: 'Baseline map file',
+      prompt: 'Enter baseline .map file path',
+      value: defaultBaseline,
+      ignoreFocusOut: true,
+      validateInput: (value) => value.trim().length === 0 ? 'Baseline map file path is required.' : undefined
+    });
+    if (!baselineInput) {
+      return;
+    }
+
+    const currentMapPath = path.isAbsolute(currentInput) ? currentInput : path.join(runtime.workspacePath, currentInput);
+    const baselineMapPath = path.isAbsolute(baselineInput) ? baselineInput : path.join(runtime.workspacePath, baselineInput);
+    const current = await analyzeMapFile(currentMapPath);
+    const baseline = await analyzeMapFile(baselineMapPath);
+
+    const totalDelta = current.totalBytes - baseline.totalBytes;
+    const textDelta = current.textBytes - baseline.textBytes;
+    const dataDelta = current.dataBytes - baseline.dataBytes;
+    const bssDelta = current.bssBytes - baseline.bssBytes;
+
+    const totalBudgetResult = evaluateBudget(current.totalBytes, integration.automotive.sizeRegression.budgetTotalBytes, 'total');
+    const textBudgetResult = evaluateBudget(current.textBytes, integration.automotive.sizeRegression.budgetTextBytes, 'text');
+    const dataBudgetResult = evaluateBudget(current.dataBytes, integration.automotive.sizeRegression.budgetDataBytes, 'data');
+    const bssBudgetResult = evaluateBudget(current.bssBytes, integration.automotive.sizeRegression.budgetBssBytes, 'bss');
+
+    const budgetFailures = [totalBudgetResult, textBudgetResult, dataBudgetResult, bssBudgetResult]
+      .filter((item) => !item.passed)
+      .map((item) => item.reason);
+    const passed = budgetFailures.length === 0;
+
+    this.presenter.showReport({
+      title: 'Size Regression',
+      summary: [
+        `Status: ${passed ? 'PASS' : 'FAIL'}`,
+        `Current map: ${current.mapPath}`,
+        `Baseline map: ${baseline.mapPath}`,
+        `Total: ${formatSignedDelta(totalDelta)} (current ${formatBytes(current.totalBytes)})`,
+        `Text/Rodata: ${formatSignedDelta(textDelta)} (current ${formatBytes(current.textBytes)})`,
+        `Data: ${formatSignedDelta(dataDelta)} (current ${formatBytes(current.dataBytes)})`,
+        `BSS: ${formatSignedDelta(bssDelta)} (current ${formatBytes(current.bssBytes)})`
+      ],
+      sections: [
+        {
+          title: 'Budget Check',
+          body: [
+            totalBudgetResult.reason,
+            textBudgetResult.reason,
+            dataBudgetResult.reason,
+            bssBudgetResult.reason
+          ].join('\n')
+        },
+        {
+          title: 'Largest Current Sections',
+          body: current.sections
+            .slice(0, 15)
+            .map((section) => `${section.name.padEnd(20, ' ')} ${section.bytes.toString().padStart(10, ' ')} B (${formatBytes(section.bytes)})`)
+            .join('\n') || 'No section parsed.'
+        }
+      ]
+    });
+
+    await this.safeAudit(runtime.workspacePath, integration.automotive.auditLogFile, {
+      timestamp: new Date().toISOString(),
+      kind: 'workflow',
+      title: 'Size Regression',
+      scenarioName: scenarioValues.scenarioName,
+      success: passed,
+      detail: `totalDelta=${totalDelta}, textDelta=${textDelta}, dataDelta=${dataDelta}, bssDelta=${bssDelta}`
+    });
+  }
+
+  private async runFlashAndSmokeWorkflow(): Promise<void> {
+    const integration = readIntegrationConfig();
+    const scenarioValues = getScenarioValues(integration.automotive);
+    const runtime = await buildRuntimeContext({
+      additionalValues: scenarioValues
+    });
+    if (!runtime || !runtime.workspacePath) {
+      vscode.window.showErrorMessage('Open a workspace folder first.');
+      return;
+    }
+
+    const imagePathInput = await vscode.window.showInputBox({
+      title: 'Firmware image path',
+      prompt: 'Enter firmware image path (elf/hex/bin)',
+      value: path.join(runtime.workspacePath, 'build', scenarioValues.scenarioName || 'default', 'app.elf'),
+      ignoreFocusOut: true,
+      validateInput: (value) => value.trim().length === 0 ? 'Image path is required.' : undefined
+    });
+    if (!imagePathInput) {
+      return;
+    }
+
+    const imagePath = path.isAbsolute(imagePathInput)
+      ? imagePathInput
+      : path.join(runtime.workspacePath, imagePathInput);
+    const values = mergeValueSources(runtime.values, scenarioValues, { imagePath });
+
+    const flashExecutable = await this.resolveExecutable(
+      integration.automotive.flashSmoke.flashExecutableKey,
+      integration.automotive.flashSmoke.flashExecutableKey,
+      'Flash step'
+    );
+    if (!flashExecutable) {
+      return;
+    }
+
+    const flashResult = await this.runProcessStep(
+      'Flash Firmware',
+      flashExecutable,
+      integration.automotive.flashSmoke.flashArgsTemplate.map((arg) => applyTemplate(arg, values)),
+      runtime.workspacePath,
+      integration
+    );
+
+    let smokeResult: Awaited<ReturnType<typeof this.runProcessStep>> | undefined;
+    if (flashResult.success) {
+      const smokeExecutable = await this.resolveExecutable(
+        integration.automotive.flashSmoke.smokeExecutableKey,
+        integration.automotive.flashSmoke.smokeExecutableKey,
+        'Smoke step'
+      );
+      if (!smokeExecutable) {
+        return;
+      }
+      smokeResult = await this.runProcessStep(
+        'Smoke Test',
+        smokeExecutable,
+        integration.automotive.flashSmoke.smokeArgsTemplate.map((arg) => applyTemplate(arg, values)),
+        runtime.workspacePath,
+        integration
+      );
+    }
+
+    const passed = flashResult.success && (smokeResult?.success ?? false);
+    const detailLines = [
+      `Flash: ${flashResult.success ? 'OK' : 'FAIL'} (exit ${flashResult.exitCode}, ${flashResult.durationMs} ms)`,
+      smokeResult
+        ? `Smoke: ${smokeResult.success ? 'OK' : 'FAIL'} (exit ${smokeResult.exitCode}, ${smokeResult.durationMs} ms)`
+        : 'Smoke: skipped due to flash failure'
+    ];
+
+    this.presenter.showReport({
+      title: 'Flash + Smoke Test',
+      summary: [
+        `Status: ${passed ? 'PASS' : 'FAIL'}`,
+        `Image: ${imagePath}`,
+        `Scenario: ${scenarioValues.scenarioName || '(none)'}`
+      ],
+      sections: [
+        {
+          title: 'Step Result',
+          body: detailLines.join('\n')
+        }
+      ]
+    });
+
+    await this.safeAudit(runtime.workspacePath, integration.automotive.auditLogFile, {
+      timestamp: new Date().toISOString(),
+      kind: 'workflow',
+      title: 'Flash + Smoke Test',
+      scenarioName: scenarioValues.scenarioName,
+      success: passed,
+      durationMs: flashResult.durationMs + (smokeResult?.durationMs ?? 0),
+      detail: detailLines.join('; ')
+    });
+  }
+
+  private async runUdsDiagnosticsWorkflow(): Promise<void> {
+    const integration = readIntegrationConfig();
+    const scenarioValues = getScenarioValues(integration.automotive);
+    const runtime = await buildRuntimeContext({
+      additionalValues: scenarioValues
+    });
+    if (!runtime || !runtime.workspacePath) {
+      vscode.window.showErrorMessage('Open a workspace folder first.');
+      return;
+    }
+
+    const operation = await vscode.window.showQuickPick(
+      [
+        { label: 'Read DTC', value: 'readDtc' as const },
+        { label: 'Clear DTC', value: 'clearDtc' as const },
+        { label: 'Read DID', value: 'readDid' as const }
+      ],
+      { title: 'UDS operation' }
+    );
+    if (!operation) {
+      return;
+    }
+
+    const ecuAddress = await vscode.window.showInputBox({
+      title: 'ECU address',
+      prompt: 'Enter UDS target ECU address',
+      value: integration.automotive.udsDiagnostics.ecuAddress || scenarioValues.ecu || '0x7E0',
+      ignoreFocusOut: true,
+      validateInput: (value) => value.trim().length === 0 ? 'ECU address is required.' : undefined
+    });
+    if (!ecuAddress) {
+      return;
+    }
+
+    let did = '';
+    if (operation.value === 'readDid') {
+      const didInput = await vscode.window.showInputBox({
+        title: 'DID',
+        prompt: 'Enter DID (for example F190)',
+        value: 'F190',
+        ignoreFocusOut: true,
+        validateInput: (value) => value.trim().length === 0 ? 'DID is required.' : undefined
+      });
+      if (!didInput) {
+        return;
+      }
+      did = didInput.trim();
+    }
+
+    const values = mergeValueSources(runtime.values, scenarioValues, {
+      ecuAddress: ecuAddress.trim(),
+      did
+    });
+
+    if (integration.automotive.udsDiagnostics.transport === 'rest') {
+      const baseUrl = integration.automotive.udsDiagnostics.restBaseUrl || integration.restBaseUrl;
+      if (!baseUrl) {
+        vscode.window.showWarningMessage('Set cliRunner.udsRestBaseUrl (or cliRunner.restBaseUrl) first.');
+        return;
+      }
+
+      const endpointTemplate = operation.value === 'readDtc'
+        ? integration.automotive.udsDiagnostics.readDtcEndpointTemplate
+        : operation.value === 'clearDtc'
+          ? integration.automotive.udsDiagnostics.clearDtcEndpointTemplate
+          : integration.automotive.udsDiagnostics.readDidEndpointTemplate;
+      const endpoint = applyTemplate(endpointTemplate, values);
+      const url = /^https?:\/\//i.test(endpoint)
+        ? endpoint
+        : `${baseUrl.replace(/\/+$/, '')}/${endpoint.replace(/^\/+/, '')}`;
+      const method = operation.value === 'clearDtc' ? 'POST' : 'GET';
+      const token = integration.automotive.udsDiagnostics.restToken || integration.restToken;
+      const headers: Record<string, string> = { Accept: 'application/json' };
+      if (token) {
+        headers.Authorization = `Bearer ${token}`;
+      }
+
+      const model = await runRestWithProgress({
+        title: `UDS ${operation.label}`,
+        method,
+        url,
+        headers,
+        timeoutMs: integration.restTimeoutMs,
+        output: this.output
+      });
+      this.presenter.showRest(model);
+      notifyRest(model.result);
+      await this.safeAudit(runtime.workspacePath, integration.automotive.auditLogFile, {
+        timestamp: new Date().toISOString(),
+        kind: 'workflow',
+        title: `UDS ${operation.label}`,
+        scenarioName: scenarioValues.scenarioName,
+        success: !model.result.cancelled && model.result.ok,
+        durationMs: model.result.durationMs,
+        detail: `${method} ${url}`
+      });
+      return;
+    }
+
+    const executable = await this.resolveExecutable(
+      integration.automotive.udsDiagnostics.executableKey,
+      integration.automotive.udsDiagnostics.executableKey,
+      'UDS CLI'
+    );
+    if (!executable) {
+      return;
+    }
+    const argsTemplate = operation.value === 'readDtc'
+      ? integration.automotive.udsDiagnostics.readDtcArgsTemplate
+      : operation.value === 'clearDtc'
+        ? integration.automotive.udsDiagnostics.clearDtcArgsTemplate
+        : integration.automotive.udsDiagnostics.readDidArgsTemplate;
+    const args = argsTemplate.map((arg) => applyTemplate(arg, values)).filter((arg) => arg.length > 0);
+    const result = await this.runProcessStep(`UDS ${operation.label}`, executable, args, runtime.workspacePath, integration);
+
+    await this.safeAudit(runtime.workspacePath, integration.automotive.auditLogFile, {
+      timestamp: new Date().toISOString(),
+      kind: 'workflow',
+      title: `UDS ${operation.label}`,
+      scenarioName: scenarioValues.scenarioName,
+      success: result.success,
+      durationMs: result.durationMs,
+      detail: `${executable} ${args.join(' ')}`
+    });
+  }
+
+  private async runDbcLookupWorkflow(): Promise<void> {
+    const integration = readIntegrationConfig();
+    const runtime = await buildRuntimeContext();
+    if (!runtime || !runtime.workspacePath) {
+      vscode.window.showErrorMessage('Open a workspace folder first.');
+      return;
+    }
+
+    const keyword = await vscode.window.showInputBox({
+      title: 'DBC signal keyword',
+      prompt: 'Enter signal name keyword (case-insensitive)',
+      ignoreFocusOut: true,
+      validateInput: (value) => value.trim().length === 0 ? 'Keyword is required.' : undefined
+    });
+    if (!keyword) {
+      return;
+    }
+
+    const roots = integration.automotive.dbcSearchRoots
+      .map((item) => path.isAbsolute(item) ? item : path.join(runtime.workspacePath, item))
+      .filter((item, index, all) => all.indexOf(item) === index);
+    const dbcFiles = await scanWorkspaceFiles(roots, {
+      extensions: ['.dbc'],
+      maxFiles: 120,
+      maxDepth: 8
+    });
+    if (dbcFiles.length === 0) {
+      vscode.window.showWarningMessage('No .dbc files found under configured roots.');
+      return;
+    }
+
+    const lookup = keyword.trim().toLowerCase();
+    const hitLines: string[] = [];
+    let matchedCount = 0;
+    for (const dbcFile of dbcFiles) {
+      let content = '';
+      try {
+        content = await fs.readFile(dbcFile, 'utf8');
+      } catch {
+        continue;
+      }
+      const signals = parseDbcSignals(content);
+      const matched = signals.filter((signal) =>
+        signal.signalName.toLowerCase().includes(lookup)
+        || signal.messageName.toLowerCase().includes(lookup)
+      );
+      matched.forEach((signal) => {
+        if (hitLines.length >= 120) {
+          return;
+        }
+        matchedCount += 1;
+        hitLines.push([
+          `${path.relative(runtime.workspacePath, dbcFile)} | BO_ ${signal.messageId} ${signal.messageName}`,
+          `  SG_ ${signal.signalName} : ${signal.startBit}|${signal.bitLength}`,
+          `  scale=(${signal.factor},${signal.offset}) range=[${signal.minValue}|${signal.maxValue}] unit="${signal.unit}" receivers=${signal.receivers}`
+        ].join('\n'));
+      });
+    }
+
+    this.presenter.showReport({
+      title: 'DBC Signal Lookup',
+      summary: [
+        `Keyword: ${keyword}`,
+        `Scanned files: ${dbcFiles.length}`,
+        `Matches: ${matchedCount}`,
+        `Search roots: ${roots.map((root) => path.relative(runtime.workspacePath, root) || '.').join(', ')}`
+      ],
+      sections: [
+        {
+          title: 'Matched Signals',
+          body: hitLines.join('\n\n') || 'No matching signal found.'
+        }
+      ]
+    });
+
+    await this.safeAudit(runtime.workspacePath, integration.automotive.auditLogFile, {
+      timestamp: new Date().toISOString(),
+      kind: 'workflow',
+      title: 'DBC Signal Lookup',
+      success: matchedCount > 0,
+      detail: `keyword=${keyword}, matches=${matchedCount}`
+    });
+  }
+
+  private async runApplyPipelineTemplateWorkflow(): Promise<void> {
+    const runtime = await buildRuntimeContext();
+    if (!runtime || !runtime.workspacePath) {
+      vscode.window.showErrorMessage('Open a workspace folder first.');
+      return;
+    }
+
+    const template = await vscode.window.showQuickPick(
+      [
+        {
+          label: 'CMake + Static + UnitTest',
+          value: 'cmakeDefault' as const,
+          description: 'Configure + build + cppcheck + ctest smoke'
+        },
+        {
+          label: 'IAR + Static',
+          value: 'iarDefault' as const,
+          description: 'IAR build + clang-tidy + cppcheck'
+        },
+        {
+          label: 'GHS + QEMU Smoke',
+          value: 'ghsDefault' as const,
+          description: 'GHS build + QEMU smoke run + quality check'
+        }
+      ],
+      { title: 'Select pipeline template' }
+    );
+    if (!template) {
+      return;
+    }
+
+    const steps = buildPipelineTemplate(template.value);
+    await vscode.workspace.getConfiguration('cliRunner').update(
+      'pipelineSteps',
+      steps,
+      vscode.ConfigurationTarget.Workspace
+    );
+
+    this.presenter.showReport({
+      title: 'Pipeline Template Applied',
+      summary: [
+        `Template: ${template.label}`,
+        `Step count: ${steps.length}`,
+        'cliRunner.pipelineSteps has been updated in workspace settings.'
+      ],
+      sections: [
+        {
+          title: 'Steps',
+          body: steps
+            .map((step, index) => `${index + 1}. ${step.name}\n   executableKey=${step.executableKey}\n   args=${step.argsTemplate.join(' ')}`)
+            .join('\n')
+        }
+      ]
+    });
+
+    const integration = readIntegrationConfig();
+    await this.safeAudit(runtime.workspacePath, integration.automotive.auditLogFile, {
+      timestamp: new Date().toISOString(),
+      kind: 'workflow',
+      title: 'Apply Pipeline Template',
+      scenarioName: integration.automotive.activeScenario,
+      success: true,
+      detail: template.label
+    });
+  }
+
+  private async runHilSilWorkflow(): Promise<void> {
+    const integration = readIntegrationConfig();
+    const scenarioValues = getScenarioValues(integration.automotive);
+    const runtime = await buildRuntimeContext({
+      additionalValues: scenarioValues
+    });
+    if (!runtime || !runtime.workspacePath) {
+      vscode.window.showErrorMessage('Open a workspace folder first.');
+      return;
+    }
+
+    const values = mergeValueSources(runtime.values, scenarioValues);
+    const lines: string[] = [];
+    let passed = true;
+    let totalDuration = 0;
+
+    for (const job of integration.automotive.hilSilJobs) {
+      if (!this.ensurePreflightEnv([...integration.automotive.preflightRequiredEnvVars, ...job.requiredEnvVars], job.name)) {
+        passed = false;
+        lines.push(`${job.name}: FAIL (preflight)`);
+        if (!job.continueOnError) {
+          break;
+        }
+        continue;
+      }
+
+      if (job.kind === 'cli') {
+        const executable = await this.resolveExecutable(job.executableKey, job.executableKey, job.name);
+        if (!executable) {
+          passed = false;
+          lines.push(`${job.name}: FAIL (missing executable)`);
+          if (!job.continueOnError) {
+            break;
+          }
+          continue;
+        }
+
+        const args = job.argsTemplate.map((arg) => applyTemplate(arg, values)).filter((arg) => arg.length > 0);
+        const result = await this.runProcessStep(job.name, executable, args, runtime.workspacePath, integration);
+        totalDuration += result.durationMs;
+        passed = passed && result.success;
+        lines.push(`${job.name}: ${result.success ? 'OK' : 'FAIL'} (exit ${result.exitCode}, ${result.durationMs} ms)`);
+        if (!result.success && !job.continueOnError) {
+          break;
+        }
+        continue;
+      }
+
+      const restResult = await this.runHilSilRestJob(job, values, integration);
+      totalDuration += restResult.durationMs;
+      passed = passed && restResult.success;
+      lines.push(`${job.name}: ${restResult.detail}`);
+      if (!restResult.success && !job.continueOnError) {
+        break;
+      }
+    }
+
+    this.presenter.showReport({
+      title: 'HIL/SIL Orchestrator',
+      summary: [
+        `Status: ${passed ? 'PASS' : 'FAIL'}`,
+        `Jobs configured: ${integration.automotive.hilSilJobs.length}`,
+        `Total duration: ${totalDuration} ms`
+      ],
+      sections: [
+        {
+          title: 'Job Result',
+          body: lines.join('\n') || '(none)'
+        }
+      ]
+    });
+
+    await this.safeAudit(runtime.workspacePath, integration.automotive.auditLogFile, {
+      timestamp: new Date().toISOString(),
+      kind: 'workflow',
+      title: 'HIL/SIL Orchestrator',
+      scenarioName: scenarioValues.scenarioName,
+      success: passed,
+      durationMs: totalDuration,
+      detail: lines.join('; ')
+    });
+  }
+
+  private async runTraceabilityReportWorkflow(): Promise<void> {
+    const integration = readIntegrationConfig();
+    const runtime = await buildRuntimeContext();
+    if (!runtime || !runtime.workspacePath) {
+      vscode.window.showErrorMessage('Open a workspace folder first.');
+      return;
+    }
+
+    const requirementHint = await vscode.window.showInputBox({
+      title: 'Requirement filter (optional)',
+      prompt: 'Enter one requirement ID to focus report (leave empty to include all)',
+      ignoreFocusOut: true
+    });
+
+    const gitLines = await this.runGitLines(
+      runtime.workspacePath,
+      ['log', '-n', String(integration.automotive.traceability.lookbackCommits), '--pretty=format:%H\t%ad\t%an\t%s', '--date=short']
+    );
+    const requirementRegex = safeRegex(integration.automotive.traceability.requirementPattern);
+    const commitRows = gitLines.map((line) => {
+      const parts = line.split('\t');
+      return {
+        hash: parts[0] ?? '',
+        date: parts[1] ?? '',
+        author: parts[2] ?? '',
+        subject: parts.slice(3).join('\t') || ''
+      };
+    }).filter((row) => row.hash.length > 0);
+
+    const matchedCommits = commitRows.filter((row) => {
+      const requirementMatches = row.subject.match(requirementRegex) ?? [];
+      if (requirementHint && requirementHint.trim().length > 0) {
+        return requirementMatches.some((id) => id.toLowerCase() === requirementHint.trim().toLowerCase());
+      }
+      return requirementMatches.length > 0;
+    });
+
+    const auditRecords = await readAuditRecords(runtime.workspacePath, integration.automotive.auditLogFile, { limit: 240 });
+    const relatedTests = auditRecords
+      .filter((record) => /(test|smoke|coverage|pipeline)/i.test(record.title))
+      .slice(-30);
+
+    const now = timestampForFileName(new Date());
+    const fileName = requirementHint && requirementHint.trim().length > 0
+      ? `traceability-${sanitizeFileName(requirementHint)}-${now}.md`
+      : `traceability-${now}.md`;
+    const reportDir = path.join(runtime.workspacePath, integration.automotive.postmortem.reportDir);
+    await fs.mkdir(reportDir, { recursive: true });
+    const reportPath = path.join(reportDir, fileName);
+    const markdown = buildTraceabilityMarkdown({
+      workspaceName: runtime.workspaceName,
+      requirementHint: requirementHint?.trim() ?? '',
+      requirementPattern: integration.automotive.traceability.requirementPattern,
+      scannedCommits: commitRows.length,
+      matchedCommits,
+      relatedTests
+    });
+    await fs.writeFile(reportPath, markdown, 'utf8');
+
+    const document = await vscode.workspace.openTextDocument(vscode.Uri.file(reportPath));
+    await vscode.window.showTextDocument(document, vscode.ViewColumn.Beside, true);
+
+    this.presenter.showReport({
+      title: 'Traceability Report',
+      summary: [
+        `Report: ${reportPath}`,
+        `Scanned commits: ${commitRows.length}`,
+        `Matched commits: ${matchedCommits.length}`,
+        `Recent test/workflow records: ${relatedTests.length}`
+      ],
+      sections: [
+        {
+          title: 'Matched Commits',
+          body: matchedCommits
+            .slice(0, 40)
+            .map((row) => `${row.date} ${row.hash.slice(0, 8)} ${row.subject}`)
+            .join('\n') || 'No matched commit.'
+        }
+      ]
+    });
+
+    await this.safeAudit(runtime.workspacePath, integration.automotive.auditLogFile, {
+      timestamp: new Date().toISOString(),
+      kind: 'workflow',
+      title: 'Traceability Report',
+      success: matchedCommits.length > 0,
+      detail: reportPath
+    });
+  }
+
+  private async runPostmortemWorkflow(): Promise<void> {
+    const integration = readIntegrationConfig();
+    const runtime = await buildRuntimeContext();
+    if (!runtime || !runtime.workspacePath) {
+      vscode.window.showErrorMessage('Open a workspace folder first.');
+      return;
+    }
+
+    const incident = await vscode.window.showInputBox({
+      title: 'Incident title',
+      prompt: 'Name this incident report',
+      value: 'Build or validation failure',
+      ignoreFocusOut: true,
+      validateInput: (value) => value.trim().length === 0 ? 'Incident title is required.' : undefined
+    });
+    if (!incident) {
+      return;
+    }
+
+    const auditRecords = await readAuditRecords(runtime.workspacePath, integration.automotive.auditLogFile, { limit: 300 });
+    const recentFailures = auditRecords
+      .filter((record) => !record.success)
+      .slice(-30);
+    const gitStatus = await this.runGitLines(runtime.workspacePath, ['status', '--short', '--branch']);
+    const logSnippets: Array<{ readonly path: string; readonly lines: string[] }> = [];
+    for (const candidate of integration.automotive.postmortem.logFiles) {
+      const fullPath = path.isAbsolute(candidate) ? candidate : path.join(runtime.workspacePath, candidate);
+      const lines = await readLastLines(fullPath, integration.automotive.postmortem.maxLogLines);
+      if (lines.length > 0) {
+        logSnippets.push({ path: fullPath, lines });
+      }
+    }
+
+    const reportDir = path.isAbsolute(integration.automotive.postmortem.reportDir)
+      ? integration.automotive.postmortem.reportDir
+      : path.join(runtime.workspacePath, integration.automotive.postmortem.reportDir);
+    await fs.mkdir(reportDir, { recursive: true });
+    const reportPath = path.join(reportDir, `postmortem-${timestampForFileName(new Date())}.md`);
+    const markdown = buildPostmortemMarkdown({
+      incidentTitle: incident.trim(),
+      workspaceName: runtime.workspaceName,
+      gitStatus,
+      failures: recentFailures,
+      logSnippets
+    });
+    await fs.writeFile(reportPath, markdown, 'utf8');
+
+    const document = await vscode.workspace.openTextDocument(vscode.Uri.file(reportPath));
+    await vscode.window.showTextDocument(document, vscode.ViewColumn.Beside, true);
+
+    this.presenter.showReport({
+      title: 'Postmortem Report',
+      summary: [
+        `Report: ${reportPath}`,
+        `Recent failures included: ${recentFailures.length}`,
+        `Log snippets included: ${logSnippets.length}`
+      ],
+      sections: [
+        {
+          title: 'Latest Failure Timeline',
+          body: recentFailures
+            .slice(-20)
+            .map((record) => `${record.timestamp} | ${record.title} | ${record.detail ?? ''}`)
+            .join('\n') || 'No failure record found.'
+        }
+      ]
+    });
+
+    await this.safeAudit(runtime.workspacePath, integration.automotive.auditLogFile, {
+      timestamp: new Date().toISOString(),
+      kind: 'workflow',
+      title: 'Postmortem Report',
+      success: true,
+      detail: reportPath
+    });
+  }
+
+  private async runProcessStep(
+    title: string,
+    executable: string,
+    args: string[],
+    workspacePath: string,
+    integration: ReturnType<typeof readIntegrationConfig>
+  ): Promise<{
+    readonly success: boolean;
+    readonly durationMs: number;
+    readonly exitCode: number;
+  }> {
+    const baseModel = await runProcessWithProgress({
+      title,
+      executable,
+      args,
+      cwd: workspacePath,
+      output: this.output
+    });
+    const model = this.enrichProcessModel(baseModel, workspacePath, integration);
+    this.presenter.showProcess(model);
+    const success = !model.result.cancelled
+      && model.result.exitCode === 0
+      && (model.qualityGate?.passed ?? true);
+    return {
+      success,
+      durationMs: model.result.durationMs,
+      exitCode: model.result.exitCode
+    };
+  }
+
+  private async runHilSilRestJob(
+    job: HilSilJob,
+    values: Record<string, string>,
+    integration: ReturnType<typeof readIntegrationConfig>
+  ): Promise<{
+    readonly success: boolean;
+    readonly durationMs: number;
+    readonly detail: string;
+  }> {
+    const target = job.restTarget ?? 'resource';
+    const baseUrl = target === 'alm' ? integration.almRestBaseUrl : integration.restBaseUrl;
+    const token = target === 'alm' ? integration.almRestToken : integration.restToken;
+    if (!baseUrl) {
+      return {
+        success: false,
+        durationMs: 0,
+        detail: `FAIL (missing ${target === 'alm' ? 'alm' : 'resource'} base URL)`
+      };
+    }
+
+    const endpoint = applyTemplate(job.endpointTemplate, values);
+    const url = /^https?:\/\//i.test(endpoint)
+      ? endpoint
+      : `${baseUrl.replace(/\/+$/, '')}/${endpoint.replace(/^\/+/, '')}`;
+    const headers: Record<string, string> = { Accept: 'application/json', ...integration.restExtraHeaders };
+    if (token && !Object.keys(headers).some((key) => key.toLowerCase() === 'authorization')) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+
+    const model = await runRestWithProgress({
+      title: `HIL/SIL: ${job.name}`,
+      method: job.method,
+      url,
+      headers,
+      timeoutMs: integration.restTimeoutMs,
+      output: this.output
+    });
+    this.presenter.showRest(model);
+    const success = !model.result.cancelled && model.result.ok;
+    return {
+      success,
+      durationMs: model.result.durationMs,
+      detail: `${success ? 'OK' : 'FAIL'} (HTTP ${model.result.status}, ${model.result.durationMs} ms)`
+    };
+  }
+
+  private async runGitLines(workspacePath: string, args: string[]): Promise<string[]> {
+    const cancellation = new vscode.CancellationTokenSource();
+    try {
+      const result = await executeProcessRaw('git', args, workspacePath, cancellation.token, () => {
+        // Ignore streaming lines for report generation.
+      });
+      const stdoutLines = result.stdout.split(/\r?\n/).filter((line) => line.trim().length > 0);
+      return stdoutLines;
+    } catch {
+      return [];
+    } finally {
+      cancellation.dispose();
     }
   }
 
@@ -1265,4 +2309,301 @@ function notifyRest(result: { ok: boolean; status: number; statusText: string; c
     return;
   }
   vscode.window.showWarningMessage(`REST request failed (${result.status} ${result.statusText}).`);
+}
+
+function evaluateBudget(value: number, budget: number, label: string): {
+  readonly passed: boolean;
+  readonly reason: string;
+} {
+  if (budget <= 0) {
+    return {
+      passed: true,
+      reason: `${label}: SKIP (budget not configured)`
+    };
+  }
+  if (value <= budget) {
+    return {
+      passed: true,
+      reason: `${label}: OK (${value} <= ${budget})`
+    };
+  }
+  return {
+    passed: false,
+    reason: `${label}: FAIL (${value} > ${budget})`
+  };
+}
+
+function formatSignedDelta(delta: number): string {
+  if (delta === 0) {
+    return '0 B';
+  }
+  const prefix = delta > 0 ? '+' : '-';
+  return `${prefix}${formatBytes(Math.abs(delta))} (${prefix}${Math.abs(delta)} B)`;
+}
+
+async function pathExists(fullPath: string): Promise<boolean> {
+  try {
+    await fs.access(fullPath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function isExecutableReachable(command: string, workspacePath: string): Promise<boolean> {
+  const normalized = command.trim();
+  if (!normalized) {
+    return false;
+  }
+
+  if (path.isAbsolute(normalized)) {
+    return pathExists(normalized);
+  }
+
+  if (normalized.includes('/') || normalized.includes('\\')) {
+    return pathExists(path.resolve(workspacePath, normalized));
+  }
+
+  const pathEnv = process.env.PATH ?? '';
+  const folders = pathEnv.split(path.delimiter).filter((entry) => entry.trim().length > 0);
+  const candidates = withExecutableExtensions(normalized);
+  for (const folder of folders) {
+    for (const candidate of candidates) {
+      const fullPath = path.join(folder, candidate);
+      if (await pathExists(fullPath)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function withExecutableExtensions(command: string): string[] {
+  if (process.platform !== 'win32') {
+    return [command];
+  }
+  const ext = path.extname(command);
+  if (ext.length > 0) {
+    return [command];
+  }
+  const pathExt = (process.env.PATHEXT ?? '.EXE;.CMD;.BAT;.COM')
+    .split(';')
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
+  return [command, ...pathExt.map((item) => `${command}${item.toLowerCase()}`)];
+}
+
+function buildPipelineTemplate(template: 'cmakeDefault' | 'iarDefault' | 'ghsDefault'): AutomotivePipelineStep[] {
+  if (template === 'iarDefault') {
+    return [
+      {
+        name: 'Build (IAR)',
+        executableKey: 'iarbuild',
+        argsTemplate: ['${projectFile}', '-build', '${buildType}'],
+        continueOnError: false,
+        requiredEnvVars: []
+      },
+      {
+        name: 'clang-tidy (Active File)',
+        executableKey: 'clang-tidy',
+        argsTemplate: ['${activeFilePath}', '--'],
+        continueOnError: true,
+        requiredEnvVars: []
+      },
+      {
+        name: 'cppcheck (Workspace)',
+        executableKey: 'cppcheck',
+        argsTemplate: ['--enable=warning,style,performance,portability', '${workspacePath}'],
+        continueOnError: true,
+        requiredEnvVars: []
+      }
+    ];
+  }
+
+  if (template === 'ghsDefault') {
+    return [
+      {
+        name: 'Build (Green Hills)',
+        executableKey: 'gbuild',
+        argsTemplate: ['${projectFile}'],
+        continueOnError: false,
+        requiredEnvVars: []
+      },
+      {
+        name: 'QEMU Smoke',
+        executableKey: 'qemu-system-arm',
+        argsTemplate: ['-M', '${qemuBoard}', '-nographic', '-kernel', '${imagePath}'],
+        continueOnError: true,
+        requiredEnvVars: []
+      },
+      {
+        name: 'Quality Check (cppcheck)',
+        executableKey: 'cppcheck',
+        argsTemplate: ['--enable=warning,style,performance,portability', '${workspacePath}'],
+        continueOnError: true,
+        requiredEnvVars: []
+      }
+    ];
+  }
+
+  return [
+    {
+      name: 'Configure (CMake)',
+      executableKey: 'cmake',
+      argsTemplate: [
+        '-S',
+        '${workspacePath}',
+        '-B',
+        '${workspacePath}/build/${variantName}',
+        '-DCMAKE_BUILD_TYPE=${buildType}'
+      ],
+      continueOnError: false,
+      requiredEnvVars: []
+    },
+    {
+      name: 'Build (CMake)',
+      executableKey: 'cmake',
+      argsTemplate: ['--build', '${workspacePath}/build/${variantName}', '--parallel'],
+      continueOnError: false,
+      requiredEnvVars: []
+    },
+    {
+      name: 'Static Analysis (cppcheck)',
+      executableKey: 'cppcheck',
+      argsTemplate: ['--enable=warning,style,performance,portability', '${workspacePath}'],
+      continueOnError: true,
+      requiredEnvVars: []
+    },
+    {
+      name: 'Smoke Test (CTest)',
+      executableKey: 'ctest',
+      argsTemplate: ['--test-dir', '${workspacePath}/build/${variantName}', '-L', 'smoke', '--output-on-failure'],
+      continueOnError: true,
+      requiredEnvVars: []
+    }
+  ];
+}
+
+function timestampForFileName(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const hour = String(date.getHours()).padStart(2, '0');
+  const minute = String(date.getMinutes()).padStart(2, '0');
+  const second = String(date.getSeconds()).padStart(2, '0');
+  return `${year}${month}${day}-${hour}${minute}${second}`;
+}
+
+function sanitizeFileName(value: string): string {
+  const sanitized = value
+    .trim()
+    .replace(/[^a-zA-Z0-9._-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+  return sanitized || 'report';
+}
+
+function safeRegex(pattern: string): RegExp {
+  try {
+    return new RegExp(pattern, 'g');
+  } catch {
+    return /[A-Z]{2,}-\d+/g;
+  }
+}
+
+function buildTraceabilityMarkdown(options: {
+  readonly workspaceName: string;
+  readonly requirementHint: string;
+  readonly requirementPattern: string;
+  readonly scannedCommits: number;
+  readonly matchedCommits: Array<{ readonly hash: string; readonly date: string; readonly author: string; readonly subject: string }>;
+  readonly relatedTests: AuditRecord[];
+}): string {
+  const lines: string[] = [];
+  lines.push('# Traceability Report');
+  lines.push('');
+  lines.push(`- Workspace: ${options.workspaceName}`);
+  lines.push(`- Requirement filter: ${options.requirementHint || '(all matched requirements)'}`);
+  lines.push(`- Requirement regex: \`${options.requirementPattern}\``);
+  lines.push(`- Scanned commits: ${options.scannedCommits}`);
+  lines.push(`- Matched commits: ${options.matchedCommits.length}`);
+  lines.push(`- Related test/workflow records: ${options.relatedTests.length}`);
+  lines.push('');
+  lines.push('## Matched Commits');
+  lines.push('');
+  if (options.matchedCommits.length === 0) {
+    lines.push('_No matched commit._');
+  } else {
+    options.matchedCommits.forEach((commit) => {
+      lines.push(`- ${commit.date} \`${commit.hash.slice(0, 8)}\` ${commit.subject} (${commit.author})`);
+    });
+  }
+  lines.push('');
+  lines.push('## Recent Test and Workflow Records');
+  lines.push('');
+  if (options.relatedTests.length === 0) {
+    lines.push('_No related record found in audit log._');
+  } else {
+    options.relatedTests.forEach((record) => {
+      lines.push(`- ${record.timestamp} | ${record.success ? 'PASS' : 'FAIL'} | ${record.title} | ${record.detail ?? ''}`);
+    });
+  }
+  lines.push('');
+  return `${lines.join('\n')}\n`;
+}
+
+function buildPostmortemMarkdown(options: {
+  readonly incidentTitle: string;
+  readonly workspaceName: string;
+  readonly gitStatus: string[];
+  readonly failures: AuditRecord[];
+  readonly logSnippets: Array<{ readonly path: string; readonly lines: string[] }>;
+}): string {
+  const lines: string[] = [];
+  lines.push('# Incident Postmortem');
+  lines.push('');
+  lines.push(`- Incident: ${options.incidentTitle}`);
+  lines.push(`- Workspace: ${options.workspaceName}`);
+  lines.push(`- Generated at: ${new Date().toISOString()}`);
+  lines.push('');
+  lines.push('## Git Status Snapshot');
+  lines.push('');
+  if (options.gitStatus.length === 0) {
+    lines.push('_No git status data._');
+  } else {
+    lines.push('```text');
+    lines.push(...options.gitStatus);
+    lines.push('```');
+  }
+  lines.push('');
+  lines.push('## Recent Failure Timeline');
+  lines.push('');
+  if (options.failures.length === 0) {
+    lines.push('_No failure record found in audit log._');
+  } else {
+    options.failures.forEach((record) => {
+      lines.push(`- ${record.timestamp} | ${record.title} | ${record.detail ?? ''}`);
+    });
+  }
+  lines.push('');
+  lines.push('## Log Evidence');
+  lines.push('');
+  if (options.logSnippets.length === 0) {
+    lines.push('_No configured log file snippet included._');
+  } else {
+    options.logSnippets.forEach((snippet) => {
+      lines.push(`### ${snippet.path}`);
+      lines.push('```text');
+      lines.push(...snippet.lines);
+      lines.push('```');
+      lines.push('');
+    });
+  }
+  lines.push('## Initial Findings');
+  lines.push('');
+  lines.push('- Summarize the primary symptom and first failure point.');
+  lines.push('- Link likely root cause candidates and required reproducer data.');
+  lines.push('- Capture next containment and permanent fix actions.');
+  lines.push('');
+  return `${lines.join('\n')}\n`;
 }

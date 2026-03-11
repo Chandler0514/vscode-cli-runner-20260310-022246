@@ -2,7 +2,7 @@
   "name": "cli-runner-sidebar",
   "displayName": "CLI Runner Sidebar",
   "description": "Find configured executables in the workspace, parse commands from -h, and run them from a sidebar.",
-  "version": "0.0.9",
+  "version": "0.1.0",
   "publisher": "chandler-local",
   "repository": {
     "type": "git",
@@ -347,7 +347,8 @@
             "valgrind": "valgrind",
             "qemu-system-arm": "qemu-system-arm",
             "openocd": "openocd",
-            "JLinkExe": "JLinkExe"
+            "JLinkExe": "JLinkExe",
+            "uds-cli": "uds-cli"
           },
           "description": "Tool wrapper executable map. Includes SCM/ALM and automotive toolchain keys.",
           "additionalProperties": {
@@ -487,6 +488,261 @@
           "type": "string",
           "default": ".cli-runner/audit-log.jsonl",
           "description": "Relative or absolute path for JSONL execution audit log."
+        },
+        "cliRunner.environmentRequiredEnvVars": {
+          "type": "array",
+          "default": [],
+          "description": "Additional required environment variables for Environment Doctor.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "cliRunner.environmentRequiredFiles": {
+          "type": "array",
+          "default": [],
+          "description": "Required files (relative to workspace or absolute) checked by Environment Doctor.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "cliRunner.environmentRequiredExecutables": {
+          "type": "array",
+          "default": [
+            "cmake",
+            "cppcheck",
+            "openocd",
+            "ctest"
+          ],
+          "description": "Executable keys checked by Environment Doctor.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "cliRunner.sizeBaselineMapPath": {
+          "type": "string",
+          "default": "",
+          "description": "Default baseline map file path for size regression compare."
+        },
+        "cliRunner.sizeBudgetTotalBytes": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "description": "Total bytes budget for size regression (0 means disabled)."
+        },
+        "cliRunner.sizeBudgetTextBytes": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "description": "Text/rodata bytes budget for size regression (0 means disabled)."
+        },
+        "cliRunner.sizeBudgetDataBytes": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "description": "Data bytes budget for size regression (0 means disabled)."
+        },
+        "cliRunner.sizeBudgetBssBytes": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "description": "BSS bytes budget for size regression (0 means disabled)."
+        },
+        "cliRunner.flashToolKey": {
+          "type": "string",
+          "default": "openocd",
+          "description": "Tool executable key used by Flash + Smoke workflow for flashing."
+        },
+        "cliRunner.flashArgsTemplate": {
+          "type": "array",
+          "default": [
+            "-f",
+            "interface/${debugInterface}.cfg",
+            "-f",
+            "target/${mcu}.cfg",
+            "-c",
+            "program ${imagePath} verify reset exit"
+          ],
+          "description": "Arguments template for flash step.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "cliRunner.smokeToolKey": {
+          "type": "string",
+          "default": "ctest",
+          "description": "Tool executable key used by Flash + Smoke workflow for smoke testing."
+        },
+        "cliRunner.smokeArgsTemplate": {
+          "type": "array",
+          "default": [
+            "--test-dir",
+            "${workspacePath}/build/${scenarioName}",
+            "-L",
+            "smoke",
+            "--output-on-failure"
+          ],
+          "description": "Arguments template for smoke test step.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "cliRunner.udsTransport": {
+          "type": "string",
+          "default": "rest",
+          "enum": [
+            "rest",
+            "cli"
+          ],
+          "description": "Transport used by UDS Diagnostics workflow."
+        },
+        "cliRunner.udsRestBaseUrl": {
+          "type": "string",
+          "default": "",
+          "description": "Base URL for UDS REST diagnostics."
+        },
+        "cliRunner.udsRestToken": {
+          "type": "string",
+          "default": "",
+          "description": "Bearer token for UDS REST diagnostics."
+        },
+        "cliRunner.udsExecutableKey": {
+          "type": "string",
+          "default": "uds-cli",
+          "description": "Tool executable key used when UDS diagnostics uses CLI transport."
+        },
+        "cliRunner.udsDefaultEcuAddress": {
+          "type": "string",
+          "default": "0x7E0",
+          "description": "Default ECU address used by UDS workflow."
+        },
+        "cliRunner.udsReadDtcEndpointTemplate": {
+          "type": "string",
+          "default": "/uds/${ecuAddress}/dtc",
+          "description": "REST endpoint template for reading DTCs."
+        },
+        "cliRunner.udsClearDtcEndpointTemplate": {
+          "type": "string",
+          "default": "/uds/${ecuAddress}/dtc/clear",
+          "description": "REST endpoint template for clearing DTCs."
+        },
+        "cliRunner.udsReadDidEndpointTemplate": {
+          "type": "string",
+          "default": "/uds/${ecuAddress}/did/${did}",
+          "description": "REST endpoint template for reading DID."
+        },
+        "cliRunner.udsReadDtcArgsTemplate": {
+          "type": "array",
+          "default": [
+            "read-dtc",
+            "--ecu",
+            "${ecuAddress}"
+          ],
+          "description": "CLI args template for UDS read DTC operation.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "cliRunner.udsClearDtcArgsTemplate": {
+          "type": "array",
+          "default": [
+            "clear-dtc",
+            "--ecu",
+            "${ecuAddress}"
+          ],
+          "description": "CLI args template for UDS clear DTC operation.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "cliRunner.udsReadDidArgsTemplate": {
+          "type": "array",
+          "default": [
+            "read-did",
+            "--ecu",
+            "${ecuAddress}",
+            "--did",
+            "${did}"
+          ],
+          "description": "CLI args template for UDS read DID operation.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "cliRunner.dbcSearchRoots": {
+          "type": "array",
+          "default": [
+            "dbc",
+            "network",
+            "."
+          ],
+          "description": "Roots scanned for .dbc files by DBC Signal Lookup workflow.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "cliRunner.hilSilJobs": {
+          "type": "array",
+          "default": [
+            {
+              "name": "HIL REST Health",
+              "kind": "rest",
+              "method": "GET",
+              "endpointTemplate": "/validation/projects/${project}/latest?ecu=${ecu}",
+              "restTarget": "resource",
+              "continueOnError": true,
+              "requiredEnvVars": []
+            },
+            {
+              "name": "SIL Smoke (CTest)",
+              "kind": "cli",
+              "executableKey": "ctest",
+              "argsTemplate": [
+                "--test-dir",
+                "${workspacePath}/build/${scenarioName}",
+                "-L",
+                "smoke",
+                "--output-on-failure"
+              ],
+              "continueOnError": false,
+              "requiredEnvVars": []
+            }
+          ],
+          "description": "HIL/SIL orchestrator jobs. Supports cli and rest jobs.",
+          "items": {
+            "type": "object"
+          }
+        },
+        "cliRunner.requirementIdPattern": {
+          "type": "string",
+          "default": "[A-Z]{2,}-\\d+",
+          "description": "Regular expression used to detect requirement IDs in commit messages."
+        },
+        "cliRunner.traceabilityLookbackCommits": {
+          "type": "number",
+          "default": 120,
+          "minimum": 20,
+          "maximum": 1000,
+          "description": "How many recent commits to scan when generating traceability report."
+        },
+        "cliRunner.postmortemReportDir": {
+          "type": "string",
+          "default": ".cli-runner/reports",
+          "description": "Directory for generated traceability and postmortem reports."
+        },
+        "cliRunner.postmortemLogFiles": {
+          "type": "array",
+          "default": [],
+          "description": "Log files included in postmortem report snippets.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "cliRunner.postmortemMaxLogLines": {
+          "type": "number",
+          "default": 200,
+          "minimum": 20,
+          "maximum": 2000,
+          "description": "Maximum number of lines collected from each postmortem log file."
         },
         "cliRunner.updateCheckEnabled": {
           "type": "boolean",

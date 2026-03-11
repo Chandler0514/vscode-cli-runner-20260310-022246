@@ -7,7 +7,17 @@ export type WorkflowActionId =
   | 'automotive.selectScenario'
   | 'automotive.runPipeline'
   | 'automotive.runVariantMatrix'
-  | 'automotive.analyzeMap';
+  | 'automotive.analyzeMap'
+  | 'automotive.environmentDoctor'
+  | 'automotive.qualityDashboard'
+  | 'automotive.sizeRegression'
+  | 'automotive.flashAndSmoke'
+  | 'automotive.udsDiagnostics'
+  | 'automotive.dbcLookup'
+  | 'automotive.applyPipelineTemplate'
+  | 'automotive.runHilSil'
+  | 'automotive.traceabilityReport'
+  | 'automotive.postmortemReport';
 
 export interface ParsedCliCommand {
   readonly command: string;
@@ -154,6 +164,64 @@ export interface AutomotivePipelineStep {
   readonly requiredEnvVars: string[];
 }
 
+export interface HilSilJob {
+  readonly name: string;
+  readonly kind: 'cli' | 'rest';
+  readonly executableKey: string;
+  readonly argsTemplate: string[];
+  readonly method: HttpMethod;
+  readonly endpointTemplate: string;
+  readonly restTarget: RestTarget;
+  readonly continueOnError: boolean;
+  readonly requiredEnvVars: string[];
+}
+
+export interface EnvironmentDoctorConfig {
+  readonly requiredEnvVars: string[];
+  readonly requiredFiles: string[];
+  readonly requiredExecutables: string[];
+}
+
+export interface SizeRegressionConfig {
+  readonly baselineMapPath: string;
+  readonly budgetTotalBytes: number;
+  readonly budgetTextBytes: number;
+  readonly budgetDataBytes: number;
+  readonly budgetBssBytes: number;
+}
+
+export interface FlashSmokeConfig {
+  readonly flashExecutableKey: string;
+  readonly flashArgsTemplate: string[];
+  readonly smokeExecutableKey: string;
+  readonly smokeArgsTemplate: string[];
+}
+
+export interface UdsDiagnosticsConfig {
+  readonly transport: 'rest' | 'cli';
+  readonly restBaseUrl: string;
+  readonly restToken: string;
+  readonly executableKey: string;
+  readonly ecuAddress: string;
+  readonly readDtcEndpointTemplate: string;
+  readonly clearDtcEndpointTemplate: string;
+  readonly readDidEndpointTemplate: string;
+  readonly readDtcArgsTemplate: string[];
+  readonly clearDtcArgsTemplate: string[];
+  readonly readDidArgsTemplate: string[];
+}
+
+export interface TraceabilityConfig {
+  readonly requirementPattern: string;
+  readonly lookbackCommits: number;
+}
+
+export interface PostmortemConfig {
+  readonly reportDir: string;
+  readonly logFiles: string[];
+  readonly maxLogLines: number;
+}
+
 export interface AutomotiveConfig {
   readonly activeScenario: string;
   readonly scenarios: Record<string, Record<string, string>>;
@@ -164,6 +232,14 @@ export interface AutomotiveConfig {
   readonly qualityGateMaxErrors: number;
   readonly auditLogFile: string;
   readonly enableDiagnostics: boolean;
+  readonly environmentDoctor: EnvironmentDoctorConfig;
+  readonly sizeRegression: SizeRegressionConfig;
+  readonly flashSmoke: FlashSmokeConfig;
+  readonly udsDiagnostics: UdsDiagnosticsConfig;
+  readonly dbcSearchRoots: string[];
+  readonly hilSilJobs: HilSilJob[];
+  readonly traceability: TraceabilityConfig;
+  readonly postmortem: PostmortemConfig;
 }
 
 export interface ParsedDiagnostic {

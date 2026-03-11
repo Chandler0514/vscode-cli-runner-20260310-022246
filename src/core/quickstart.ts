@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { readCliConfig, readIntegrationConfig } from './config';
 
-const QUICKSTART_SHOWN_KEY = 'cliRunner.quickstart.shown.v2';
+const QUICKSTART_SHOWN_KEY = 'cliRunner.quickstart.shown.v3';
 
 interface QuickstartAction {
   readonly label: string;
@@ -87,6 +87,17 @@ function buildModel(): QuickstartModel {
   const hasActiveScenario = integration.automotive.activeScenario.trim().length > 0;
   const hasVariantMatrix = Object.keys(integration.automotive.variantMatrix).length > 0;
   const hasRestEndpoint = integration.restBaseUrl.length > 0 || integration.almRestBaseUrl.length > 0;
+  const hasSizeRegressionBaseline = integration.automotive.sizeRegression.baselineMapPath.trim().length > 0
+    || integration.automotive.sizeRegression.budgetTotalBytes > 0
+    || integration.automotive.sizeRegression.budgetTextBytes > 0
+    || integration.automotive.sizeRegression.budgetDataBytes > 0
+    || integration.automotive.sizeRegression.budgetBssBytes > 0;
+  const hasUdsReady = integration.automotive.udsDiagnostics.transport === 'rest'
+    ? (integration.automotive.udsDiagnostics.restBaseUrl.length > 0 || integration.restBaseUrl.length > 0)
+    : integration.automotive.udsDiagnostics.executableKey.trim().length > 0;
+  const hasDbcSearchRoots = integration.automotive.dbcSearchRoots.length > 0;
+  const hasHilSilJobs = integration.automotive.hilSilJobs.length > 0;
+  const hasPostmortemDir = integration.automotive.postmortem.reportDir.trim().length > 0;
 
   const checks: QuickstartCheck[] = [
     {
@@ -155,6 +166,61 @@ function buildModel(): QuickstartModel {
         command: 'workbench.action.openSettings',
         args: ['cliRunner.restBaseUrl']
       }
+    },
+    {
+      label: 'Size regression baseline/budget configured',
+      ok: hasSizeRegressionBaseline,
+      required: false,
+      hint: 'Configure map baseline or size budgets before regression checks.',
+      action: {
+        label: 'Open Settings (size budget)',
+        command: 'workbench.action.openSettings',
+        args: ['cliRunner.sizeBudgetTotalBytes']
+      }
+    },
+    {
+      label: 'UDS diagnostics transport ready',
+      ok: hasUdsReady,
+      required: false,
+      hint: 'Set UDS REST endpoint/token or CLI executable key.',
+      action: {
+        label: 'Open Settings (UDS)',
+        command: 'workbench.action.openSettings',
+        args: ['cliRunner.udsTransport']
+      }
+    },
+    {
+      label: 'DBC search roots configured',
+      ok: hasDbcSearchRoots,
+      required: false,
+      hint: 'Set dbcSearchRoots for fast signal lookup.',
+      action: {
+        label: 'Open Settings (DBC roots)',
+        command: 'workbench.action.openSettings',
+        args: ['cliRunner.dbcSearchRoots']
+      }
+    },
+    {
+      label: 'HIL/SIL jobs configured',
+      ok: hasHilSilJobs,
+      required: false,
+      hint: 'Set hilSilJobs for mixed CLI/REST validation orchestration.',
+      action: {
+        label: 'Open Settings (HIL/SIL jobs)',
+        command: 'workbench.action.openSettings',
+        args: ['cliRunner.hilSilJobs']
+      }
+    },
+    {
+      label: 'Postmortem report directory configured',
+      ok: hasPostmortemDir,
+      required: false,
+      hint: 'Set report directory and log snippets for incident analysis.',
+      action: {
+        label: 'Open Settings (postmortem)',
+        command: 'workbench.action.openSettings',
+        args: ['cliRunner.postmortemReportDir']
+      }
     }
   ];
 
@@ -193,18 +259,30 @@ function buildModel(): QuickstartModel {
       ]
     },
     {
-      title: 'Step 4 - Run Team Workflow',
-      intent: 'Move from ad-hoc commands to repeatable engineering routines.',
+      title: 'Step 4 - Run Automotive Workflow Pack',
+      intent: 'Execute high-value automotive workflows from Tool Wrappers.',
       actions: [
-        { label: 'Run Automotive Pipeline', command: 'cliRunner.runAutomotivePipeline', primary: true },
+        { label: 'Run Tool Action (Pick Workflow)', command: 'cliRunner.runToolAction', primary: true },
+        { label: 'Run Automotive Pipeline', command: 'cliRunner.runAutomotivePipeline' },
         { label: 'Run Variant Matrix', command: 'cliRunner.runVariantMatrix' },
+        { label: 'Open Settings (Environment Doctor)', command: 'workbench.action.openSettings', args: ['cliRunner.environmentRequiredEnvVars'] },
+        { label: 'Open Settings (UDS)', command: 'workbench.action.openSettings', args: ['cliRunner.udsTransport'] },
+        { label: 'Open Settings (HIL/SIL jobs)', command: 'workbench.action.openSettings', args: ['cliRunner.hilSilJobs'] }
+      ]
+    },
+    {
+      title: 'Step 5 - Review Evidence And Reports',
+      intent: 'Collect audit traces and generate traceability/postmortem reports.',
+      actions: [
         { label: 'Open Audit Log', command: 'cliRunner.openAuditLog' },
+        { label: 'Run Tool Action (Traceability/Postmortem)', command: 'cliRunner.runToolAction', primary: true },
+        { label: 'Open Settings (Report Dir)', command: 'workbench.action.openSettings', args: ['cliRunner.postmortemReportDir'] },
         { label: 'Check For Updates', command: 'cliRunner.checkForUpdates' },
         { label: 'Open Quickstart Again', command: 'cliRunner.openQuickstart' }
       ]
     },
     {
-      title: 'Step 5 - Interop Playground',
+      title: 'Step 6 - Interop Playground',
       intent: 'Connect CLI Runner with other extensions or expose your own integration layer.',
       actions: [
         { label: 'Open Interop Playground', command: 'cliRunner.openInteropPlayground', primary: true },

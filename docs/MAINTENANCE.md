@@ -193,7 +193,7 @@ The extension now includes automotive-oriented capabilities for embedded C workf
 - static analysis (`clang-tidy`, `cppcheck`, `pclint`, `clang-format`, `scan-build`)
 - dynamic/runtime checks (`ctest`, `gcovr`, `valgrind`, `qemu-system-arm`)
 - flashing/debug bootstrap (`openocd`, `JLinkExe`)
-- workflow actions (scenario, pipeline, variant matrix, map analysis)
+- workflow actions (scenario, pipeline, variant matrix, map analysis, environment doctor, size regression, flash+smoke, UDS, DBC lookup, pipeline template, HIL/SIL orchestration, traceability report, postmortem report)
 
 Main code location: `src/modules/toolModule.ts`.
 
@@ -262,6 +262,42 @@ Current summary includes:
 - `.bss`
 - top section size ranking
 
+### 7.7 Automotive Workflow Pack (v0.1.0)
+
+`Automotive Workflows` now includes high-value engineering workflows:
+
+- `automotive.environmentDoctor`: preflight environment/tool/file checks.
+- `automotive.qualityDashboard`: recent pass/fail trend and failure hotspots from audit records.
+- `automotive.sizeRegression`: current vs baseline map compare with budget evaluation.
+- `automotive.flashAndSmoke`: chained flash and smoke execution.
+- `automotive.udsDiagnostics`: `Read DTC` / `Clear DTC` / `Read DID` via REST or CLI.
+- `automotive.dbcLookup`: workspace DBC signal lookup with scaling/range output.
+- `automotive.applyPipelineTemplate`: apply built-in pipeline templates to workspace settings.
+- `automotive.runHilSil`: mixed CLI/REST validation job orchestration.
+- `automotive.traceabilityReport`: requirement/commit/test linkage markdown report.
+- `automotive.postmortemReport`: incident report with failure timeline, git snapshot, and log evidence.
+
+Related helper files:
+
+- `src/core/auditReader.ts`: parse recent JSONL audit records.
+- `src/core/workspaceInsights.ts`: workspace scanning, DBC parse helpers, log tail helpers.
+
+Detailed feature matrix:
+
+- `docs/AUTOMOTIVE_FEATURES.md`
+
+### 7.8 New Automotive Settings (v0.1.0)
+
+New settings families introduced in this release:
+
+- Environment doctor: `environmentRequiredEnvVars`, `environmentRequiredFiles`, `environmentRequiredExecutables`
+- Size regression: `sizeBaselineMapPath`, `sizeBudgetTotalBytes`, `sizeBudgetTextBytes`, `sizeBudgetDataBytes`, `sizeBudgetBssBytes`
+- Flash/smoke: `flashToolKey`, `flashArgsTemplate`, `smokeToolKey`, `smokeArgsTemplate`
+- UDS diagnostics: `udsTransport`, `udsRestBaseUrl`, `udsRestToken`, `udsExecutableKey`, `udsDefaultEcuAddress`, `uds*ArgsTemplate`, `uds*EndpointTemplate`
+- DBC lookup: `dbcSearchRoots`
+- HIL/SIL orchestration: `hilSilJobs`
+- Traceability/postmortem: `requirementIdPattern`, `traceabilityLookbackCommits`, `postmortemReportDir`, `postmortemLogFiles`, `postmortemMaxLogLines`
+
 ## 8. Quickstart And UX Entry Points
 
 Quickstart implementation:
@@ -269,7 +305,7 @@ Quickstart implementation:
 - core file: `src/core/quickstart.ts`
 - command: `cliRunner.openQuickstart`
 - command: `cliRunner.openAuditLog`
-- first-run auto open flag: extension global state key `cliRunner.quickstart.shown.v2`
+- first-run auto open flag: extension global state key `cliRunner.quickstart.shown.v3`
 - activation wiring: `src/extension.ts`
 
 Behavior:
@@ -277,7 +313,7 @@ Behavior:
 1. First activation auto-opens quickstart page once.
 2. Users can re-open it from command palette or view title toolbar help icon.
 3. Page includes clickable setup checks, guided click-tour path, and design mindset.
-4. Tour flow includes direct links for settings search, module focusing, and opening audit log.
+4. Tour flow includes direct links for settings search, module focusing, automotive workflow pack setup, and report evidence review.
 
 View toolbar icon migration:
 

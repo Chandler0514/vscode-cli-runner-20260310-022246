@@ -60,8 +60,9 @@ The guide helps teams:
 
 - complete required setup (workspace, executable discovery, scenario)
 - run a guided click-tour across the 3 modules
+- onboard automotive workflow pack (Environment Doctor, UDS, HIL/SIL, report workflows)
 - jump to plugin configuration actions directly from each checklist item
-- open audit logs after workflow execution
+- open audit logs and generated reports after workflow execution
 - align on plugin design mindset (context-first, observable, deterministic workflow)
 
 You can re-open anytime with `CLI Runner: Open Quickstart`.

@@ -250,9 +250,10 @@ function buildModel(): QuickstartModel {
     },
     {
       title: 'Step 3 - Run Core Actions',
-      intent: 'Execute one action per module and inspect output + result views.',
+      intent: 'Execute one action per module and validate option-argument prompting in CLI Commands.',
       actions: [
         { label: 'Run CLI Command', command: 'cliRunner.runCommand', primary: true },
+        { label: 'Run CLI Option Demo (-k/--pair/--files)', command: 'cliRunner.runCommand' },
         { label: 'Run Tool Action', command: 'cliRunner.runToolAction' },
         { label: 'Run REST Action', command: 'cliRunner.runRestAction' },
         { label: 'Toggle Output Panel', command: 'workbench.action.output.toggleOutput' }

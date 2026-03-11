@@ -38,6 +38,13 @@ The extension searches the workspace and filters to executable files.
 
 It runs help args (default `-h`) and parses common command list formats.
 
+CLI option parsing highlights:
+
+- keeps option prefixes exactly as provided (for example `-k`, `--key`)
+- supports option aliases from help lines (`-h, --help`)
+- supports option argument placeholders such as `--pair <key> <value>` and `--files <file...>`
+- when an option requires values, CLI Runner prompts for required/optional arguments before execution
+
 ### 4) Execute + enriched results
 
 Click any action node to execute directly.
@@ -233,6 +240,15 @@ npm run package:vsix
 ```
 
 Open this folder in VS Code and press `F5` to launch Extension Development Host.
+
+Mock validation tips:
+
+- use `mock-workspace/tools/cli-runner-test.cmd`
+- verify option parsing and prompting with:
+  - `-k` / `--k`
+  - `--pair <key> <value>`
+  - `--files <file...>`
+  - `--tag [name]`
 
 ## Maintenance
 

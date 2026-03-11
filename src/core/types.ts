@@ -22,6 +22,13 @@ export type WorkflowActionId =
 export interface ParsedCliCommand {
   readonly command: string;
   readonly description: string;
+  readonly argsSpec?: CliArgSpec[];
+}
+
+export interface CliArgSpec {
+  readonly name: string;
+  readonly required: boolean;
+  readonly variadic: boolean;
 }
 
 export interface ExecutableEntry {

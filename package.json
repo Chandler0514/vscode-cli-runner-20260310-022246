@@ -2,7 +2,7 @@
   "name": "cli-runner-sidebar",
   "displayName": "CLI Runner Sidebar",
   "description": "Find configured executables in the workspace, parse commands from -h, and run them from a sidebar.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publisher": "chandler-local",
   "repository": {
     "type": "git",

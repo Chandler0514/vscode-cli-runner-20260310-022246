@@ -79,6 +79,8 @@ Notes:
 - Help command args come from `cliRunner.helpArgs` (default `["-h"]`).
 - If help parsing returns no commands, module falls back to "run executable directly".
 - Split behavior for subcommand strings uses `splitArgs` (supports simple single/double quoted segments).
+- Option entries from help text keep prefix semantics (`-k`, `--key`) and no longer normalize to bare tokens.
+- For parsed options that declare argument placeholders (for example `--key <value>`, `--pair <k> <v>`, `--files <file...>`), runtime prompts users for required/optional values before execution and appends them to argv.
 
 ### 3.2 Tool Wrappers Module (`src/modules/toolModule.ts`)
 
@@ -173,6 +175,10 @@ Use `mock-workspace/tools/cli-runner-test.cmd` for fast local validation:
 3. `longrun`: cancellation path.
 4. `flood`: large output truncation behavior.
 5. `quotes demo`: quoted/multi-token command parsing.
+6. `-k` / `--k`: option prefix preservation (must not downgrade to bare token).
+7. `--pair <key> <value>`: required placeholder prompting and argv append.
+8. `--files <file...>`: variadic placeholder prompting and argv append.
+9. `--tag [name]`: optional placeholder prompting and default-friendly handling.
 
 Then run compile before packaging:
 

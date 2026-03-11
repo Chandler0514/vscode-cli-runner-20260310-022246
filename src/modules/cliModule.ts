@@ -22,9 +22,10 @@ class ExecutableNode extends vscode.TreeItem {
 
 class CliCommandNode extends vscode.TreeItem {
   public constructor(public readonly entry: ExecutableEntry, public readonly commandDef: ParsedCliCommand) {
-    super(commandDef.command || '(run executable)', vscode.TreeItemCollapsibleState.None);
+    const display = formatParsedCommandForDisplay(commandDef);
+    super(display || '(run executable)', vscode.TreeItemCollapsibleState.None);
     this.description = commandDef.description;
-    this.tooltip = `${commandDef.command || '(run executable)'}${commandDef.description ? `\n${commandDef.description}` : ''}`;
+    this.tooltip = `${display || '(run executable)'}${commandDef.description ? `\n${commandDef.description}` : ''}`;
     this.iconPath = new vscode.ThemeIcon('play-circle');
     this.command = {
       command: 'cliRunner.runCommand',
@@ -248,7 +249,7 @@ export class CliModule {
 
     const picked = await vscode.window.showQuickPick(
       nodes.map((node) => ({
-        label: `${node.entry.name} ${node.commandDef.command || '(run)'}`.trim(),
+        label: `${node.entry.name} ${formatParsedCommandForDisplay(node.commandDef) || '(run)'}`.trim(),
         description: node.commandDef.description,
         detail: node.entry.path,
         node
@@ -272,11 +273,15 @@ export class CliModule {
 
     const integration = readIntegrationConfig();
     const scenario = getScenarioValues(integration.automotive);
+    const commandArgs = await this.collectCommandArgs(node.entry.name, node.commandDef);
+    if (!commandArgs) {
+      return;
+    }
 
     const baseModel = await runProcessWithProgress({
-      title: `${node.entry.name} ${node.commandDef.command}`.trim(),
+      title: `${node.entry.name} ${formatParsedCommandForDisplay(node.commandDef)}`.trim(),
       executable: node.entry.path,
-      args: splitArgs(node.commandDef.command),
+      args: commandArgs,
       cwd: workspace.uri.fsPath,
       output: this.output
     });
@@ -299,6 +304,58 @@ export class CliModule {
     } catch (error) {
       this.output.appendLine(`[audit] Failed to append record: ${error instanceof Error ? error.message : String(error)}`);
     }
+  }
+
+  private async collectCommandArgs(executableName: string, commandDef: ParsedCliCommand): Promise<string[] | undefined> {
+    const baseArgs = splitArgs(commandDef.command);
+    const specs = commandDef.argsSpec ?? [];
+    if (specs.length === 0) {
+      return baseArgs;
+    }
+
+    const collected: string[] = [];
+    for (const spec of specs) {
+      const tokenLabel = spec.required
+        ? `<${spec.name}${spec.variadic ? '...' : ''}>`
+        : `[${spec.name}${spec.variadic ? '...' : ''}]`;
+      const value = await vscode.window.showInputBox({
+        title: `${executableName} ${commandDef.command}`.trim(),
+        prompt: spec.variadic
+          ? `Enter ${spec.required ? 'one or more' : 'zero or more'} values for ${tokenLabel} (space-separated).`
+          : `Enter value for ${tokenLabel}${spec.required ? '' : ' (optional)'}.`,
+        ignoreFocusOut: true,
+        validateInput: (input) => {
+          const trimmed = input.trim();
+          if (!spec.required) {
+            return undefined;
+          }
+          if (!trimmed) {
+            return `Value is required for ${tokenLabel}.`;
+          }
+          if (spec.variadic && splitArgs(trimmed).length === 0) {
+            return `At least one value is required for ${tokenLabel}.`;
+          }
+          return undefined;
+        }
+      });
+
+      if (value === undefined) {
+        return undefined;
+      }
+
+      const trimmed = value.trim();
+      if (!trimmed) {
+        continue;
+      }
+
+      if (spec.variadic) {
+        collected.push(...splitArgs(trimmed));
+      } else {
+        collected.push(trimmed);
+      }
+    }
+
+    return [...baseArgs, ...collected];
   }
 
   private enrichModel(
@@ -339,4 +396,20 @@ function notifyProcess(result: { exitCode: number; cancelled: boolean }): void {
     return;
   }
   vscode.window.showWarningMessage(`Command finished with exit code ${result.exitCode}.`);
+}
+
+function formatParsedCommandForDisplay(commandDef: ParsedCliCommand): string {
+  if (!commandDef.command) {
+    return '';
+  }
+  const args = commandDef.argsSpec ?? [];
+  if (args.length === 0) {
+    return commandDef.command;
+  }
+  const suffix = args
+    .map((arg) => arg.required
+      ? `<${arg.name}${arg.variadic ? '...' : ''}>`
+      : `[${arg.name}${arg.variadic ? '...' : ''}]`)
+    .join(' ');
+  return `${commandDef.command} ${suffix}`.trim();
 }

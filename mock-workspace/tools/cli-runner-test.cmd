@@ -3,11 +3,18 @@ setlocal EnableExtensions EnableDelayedExpansion
 
 set "arg1=%~1"
 set "arg2=%~2"
+set "arg3=%~3"
 
 if /I "%arg1%"=="-h" goto :help
 if /I "%arg1%"=="--help" goto :help
 if /I "%arg1%"=="/?" goto :help
 if "%arg1%"=="" goto :help
+
+if /I "%arg1%"=="-k" goto :opt_k
+if /I "%arg1%"=="--k" goto :opt_k
+if /I "%arg1%"=="--pair" goto :opt_pair
+if /I "%arg1%"=="--files" goto :opt_files
+if /I "%arg1%"=="--tag" goto :opt_tag
 
 if /I "%arg1%"=="build" goto :build
 if /I "%arg1%"=="test" goto :test
@@ -43,10 +50,59 @@ echo   exit-fail     Exits with code 7 and no output
 echo.
 echo Options:
 echo   -h, --help    Show help
+echo   -k : quick flag short form
+echo   --k : quick flag long form
+echo   --pair ^<key^> ^<value^> : requires 2 values
+echo   --files ^<file...^> : requires one or more file args
+echo   --tag [name] : optional tag value, default is smoke
 echo.
 echo Examples:
 echo   cli-runner-test build
 echo   cli-runner-test quotes demo
+echo   cli-runner-test -k
+echo   cli-runner-test --pair board TC397
+echo   cli-runner-test --files app.elf boot.elf
+echo   cli-runner-test --tag
+echo   cli-runner-test --tag release
+exit /b 0
+
+:opt_k
+echo option %arg1% detected
+if not "%arg2%"=="" echo trailing value: %arg2%
+exit /b 0
+
+:opt_pair
+if "%arg2%"=="" (
+  echo error: --pair requires ^<key^> ^<value^> 1>&2
+  exit /b 2
+)
+if "%arg3%"=="" (
+  echo error: --pair missing ^<value^> 1>&2
+  exit /b 2
+)
+echo pair parsed key=%arg2% value=%arg3%
+exit /b 0
+
+:opt_files
+if "%arg2%"=="" (
+  echo error: --files requires at least one file argument 1>&2
+  exit /b 2
+)
+set /a _argc=0
+for %%A in (%*) do set /a _argc+=1
+set /a _files=_argc-1
+echo files option parsed !_files! value(s)
+set "values=%*"
+if /I "!values:~0,8!"=="--files " set "values=!values:~8!"
+echo files: !values!
+exit /b 0
+
+:opt_tag
+if "%arg2%"=="" (
+  echo tag parsed name=smoke
+) else (
+  echo tag parsed name=%arg2%
+)
 exit /b 0
 
 :build
